@@ -2,9 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Param,
   Patch,
   Post,
+  Query,
   Req,
   // UseGuards,
 } from '@nestjs/common';
@@ -12,6 +14,7 @@ import {
 import { UsersService } from 'src/users/users.service';
 import { UpdateRolesDto } from './dto/update-roles.dto';
 import { CurrentUserAdmin } from 'src/decorators/current-user-admin.decorator';
+import { QueryUsersDto } from 'src/users/dto/query-users.dto';
 
 type AuthUser = { sub?: string; id?: string; roles?: string[] };
 
@@ -57,5 +60,12 @@ export class AdminUsersController {
 
     const requesterId: string | undefined = req.user?.sub ?? req.user?.id;
     return this.usersService.promoteToOwnerByEmail(email, requesterId);
+  }
+
+
+
+  @Get("list-user")
+  async getUsers(@Query() query: QueryUsersDto) {
+    return this.usersService.findMany(query);
   }
 }

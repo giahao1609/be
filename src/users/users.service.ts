@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { RoleEnum, User, UserRole } from './schema/user.schema';
+import { FilterQuery, Model } from 'mongoose';
+import { RoleEnum, User, UserDocument, UserRole } from './schema/user.schema';
+import { QueryUsersDto } from './dto/query-users.dto';
 
 @Injectable()
 export class UsersService {
@@ -82,5 +83,55 @@ export class UsersService {
     await user.save();
 
     return user.toObject();
+  }
+
+
+
+    async findMany(q: QueryUsersDto) {
+    const page = Math.max(1, Number(q.page ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
+    const skip = (page - 1) * limit;
+
+    const filter: FilterQuery<UserDocument> = {};
+
+    // lọc theo role
+    if (q.role) {
+      filter.roles = q.role;
+    }
+
+    // lọc theo isActive
+    if (q.isActive === 'true') filter.isActive = true;
+    if (q.isActive === 'false') filter.isActive = false;
+
+    // tìm kiếm full-text đơn giản
+    if (q.q && q.q.trim()) {
+      const regex = new RegExp(q.q.trim(), 'i');
+      filter.$or = [
+        { displayName: regex },
+        { email: regex },
+        { phone: regex },
+        { username: regex },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .skip(skip)
+        .limit(limit)
+        .sort({ createdAt: -1 })
+        .select('-passwordHash -resetExpires') // không trả password
+        .lean()
+        .exec(),
+      this.userModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      items,
+    };
   }
 }

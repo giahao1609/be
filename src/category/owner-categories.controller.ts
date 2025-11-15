@@ -29,7 +29,6 @@ import { CreateCategoryDto, ListCategoriesQueryDto, MoveCategoryDto, ReorderDto,
 export class AdminCategoriesController {
   constructor(private readonly service: AdminCategoriesService) {}
 
-  // CREATE — chỉ ADMIN
   @Post()
   @SetMetadata('roles', ['admin'])
   create(

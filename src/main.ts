@@ -4,8 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { ValidationPipe, Logger } from '@nestjs/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-  });
+  const app = await NestFactory.create(AppModule, {});
 
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
@@ -15,23 +14,25 @@ async function bootstrap() {
 
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,           
+      whitelist: true,
       forbidNonWhitelisted: false,
-      transform: true,          
+      transform: true,
     }),
   );
 
+  // const corsOrigins =
+  //   (config.get<string>('CORS_ORIGINS') ?? 'http://localhost:3000')
+  //     .split(',')
+  //     .map((s) => s.trim())
+  //     .filter(Boolean);
 
-
-  const corsOrigins =
-    (config.get<string>('CORS_ORIGINS') ?? 'http://localhost:3000')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+  // app.enableCors({
+  //   origin: corsOrigins,
+  //   credentials: true,
+  // });
 
   app.enableCors({
-    origin: corsOrigins,
-    credentials: true,
+    origin: '*',
   });
 
   const port =

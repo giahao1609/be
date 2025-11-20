@@ -14,9 +14,13 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { AdminCategoriesService } from './owner-categories.service';
-import { CreateCategoryDto, ListCategoriesQueryDto, MoveCategoryDto, ReorderDto, UpdateCategoryDto } from './dto/category.dto';
-
-
+import {
+  CreateCategoryDto,
+  ListCategoriesQueryDto,
+  MoveCategoryDto,
+  ReorderDto,
+  UpdateCategoryDto,
+} from './dto/category.dto';
 
 // === Guard/Role của bạn ===
 // Nếu bạn đã có sẵn, bỏ comment và sửa path cho đúng dự án
@@ -25,112 +29,74 @@ import { CreateCategoryDto, ListCategoriesQueryDto, MoveCategoryDto, ReorderDto,
 
 @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
 // @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('owner/restaurants/:restaurantId/categories')
+@Controller('admin/categories')
 export class AdminCategoriesController {
   constructor(private readonly service: AdminCategoriesService) {}
 
   @Post()
-  @SetMetadata('roles', ['admin'])
-  create(
-    @Param('restaurantId') restaurantId: string,
-    @Body() dto: CreateCategoryDto,
-  ) {
-    return this.service.create(restaurantId, dto);
+  // @SetMetadata('roles', ['admin'])
+  create(@Body() dto: CreateCategoryDto) {
+    return this.service.create(dto);
   }
 
   @Get()
-  list(
-    @Param('restaurantId') restaurantId: string,
-    @Query()
-    query: Omit<ListCategoriesQueryDto, 'restaurantId'> &
-      Partial<ListCategoriesQueryDto>,
-  ) {
-    return this.service.list({ ...(query as any), restaurantId });
+  list(@Query() query: ListCategoriesQueryDto) {
+    return this.service.list(query);
   }
 
   // TREE (từ parentId; root: parentId=null hoặc không truyền)
   @Get('tree')
-  tree(
-    @Param('restaurantId') restaurantId: string,
-    @Query('parentId') parentId?: string | null,
-  ) {
+  tree(@Query('parentId') parentId?: string | null) {
     const pid =
       parentId === undefined ? undefined : parentId === 'null' ? null : parentId;
-    return this.service.getTree(restaurantId, pid);
+    return this.service.getTree(pid);
   }
 
   // GET by id
   @Get('id/:id')
-  getById(
-    @Param('restaurantId') restaurantId: string,
-    @Param('id') id: string,
-  ) {
-    return this.service.findById(restaurantId, id);
+  getById(@Param('id') id: string) {
+    return this.service.findById(id);
   }
 
   // GET by slug
   @Get('slug/:slug')
-  getBySlug(
-    @Param('restaurantId') restaurantId: string,
-    @Param('slug') slug: string,
-  ) {
-    return this.service.findBySlug(restaurantId, slug);
+  getBySlug(@Param('slug') slug: string) {
+    return this.service.findBySlug(slug);
   }
 
   // UPDATE by id
   @Put('id/:id')
-  updateById(
-    @Param('restaurantId') restaurantId: string,
-    @Param('id') id: string,
-    @Body() dto: UpdateCategoryDto,
-  ) {
-    return this.service.updateById(restaurantId, id, dto);
+  updateById(@Param('id') id: string, @Body() dto: UpdateCategoryDto) {
+    return this.service.updateById(id, dto);
   }
 
   // UPDATE by slug
   @Put('slug/:slug')
-  updateBySlug(
-    @Param('restaurantId') restaurantId: string,
-    @Param('slug') slug: string,
-    @Body() dto: UpdateCategoryDto,
-  ) {
-    return this.service.updateBySlug(restaurantId, slug, dto);
+  updateBySlug(@Param('slug') slug: string, @Body() dto: UpdateCategoryDto) {
+    return this.service.updateBySlug(slug, dto);
   }
 
   // MOVE (đổi parent)
   @Patch('id/:id/move')
-  move(
-    @Param('restaurantId') restaurantId: string,
-    @Param('id') id: string,
-    @Body() dto: MoveCategoryDto,
-  ) {
-    return this.service.move(restaurantId, id, dto);
+  move(@Param('id') id: string, @Body() dto: MoveCategoryDto) {
+    return this.service.move(id, dto);
   }
 
   // REORDER (set sortIndex hàng loạt)
   @Patch('reorder')
-  reorder(
-    @Param('restaurantId') restaurantId: string,
-    @Body() dto: ReorderDto,
-  ) {
-    return this.service.reorder(restaurantId, dto);
+  reorder(@Body() dto: ReorderDto) {
+    return this.service.reorder(dto);
   }
 
   // DELETE by id
   @Delete('id/:id')
-  deleteById(
-    @Param('restaurantId') restaurantId: string,
-    @Param('id') id: string,
-  ) {
-    return this.service.deleteById(restaurantId, id);
+  deleteById(@Param('id') id: string) {
+    return this.service.deleteById(id);
   }
 
   // DELETE by slug
   @Delete('slug/:slug')
-  deleteBySlug(
-    @Param('restaurantId') restaurantId: string,
-    @Param('slug') slug: string,
-  ) {
-    return this.service.deleteBySlug(restaurantId, slug);
+  deleteBySlug(@Param('slug') slug: string) {
+    return this.service.deleteBySlug(slug);
   }
 }

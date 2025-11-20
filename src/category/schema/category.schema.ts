@@ -5,55 +5,88 @@ export type CategoryDocument = HydratedDocument<Category>;
 
 @Schema({ timestamps: true })
 export class Category {
-  @Prop({ type: MongooseSchema.Types.ObjectId, required: true, index: true })
-  restaurantId!: Types.ObjectId;
-
-  @Prop({ required: true, trim: true })
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 150,
+  })
   name!: string;
 
-  @Prop({ trim: true, lowercase: true })
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true,
+    unique: true,
+    index: true,
+  })
   slug!: string;
 
-  @Prop({ trim: true })
+  @Prop({
+    type: String,
+    trim: true,
+    maxlength: 500,
+  })
   description?: string;
 
-  @Prop({ type: String, trim: true })
+  @Prop({
+    type: String,
+    trim: true,
+  })
   image?: string;
 
-  // Cây phân cấp
-  @Prop({ type: MongooseSchema.Types.ObjectId, default: null, index: true })
+  // ====== TREE ======
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Category',
+    default: null,
+    index: true,
+  })
   parentId?: Types.ObjectId | null;
 
-  @Prop({ type: [MongooseSchema.Types.ObjectId], default: [], index: true })
+  @Prop({
+    type: [MongooseSchema.Types.ObjectId],
+    ref: 'Category',
+    default: [],
+  })
   ancestors?: Types.ObjectId[];
 
-  @Prop({ type: Number, default: 0, index: true })
+  @Prop({
+    type: Number,
+    default: 0,
+  })
   depth?: number;
 
-  @Prop({ type: String, trim: true, default: '' })
-  path?: string; // ví dụ: "root/appetizers/hot"
+  @Prop({
+    type: String,
+    trim: true,
+    index: true,
+  })
+  path?: string;
 
-  // Hiển thị & sắp xếp
-  @Prop({ type: Boolean, default: true, index: true })
-  isActive?: boolean;
+  @Prop({
+    type: Boolean,
+    default: true,
+    index: true,
+  })
+  isActive!: boolean;
 
-  @Prop({ type: Number, default: 0 })
-  sortIndex?: number;
+  @Prop({
+    type: Number,
+    default: 0,
+    index: true,
+  })
+  sortIndex!: number;
 
-  // số item thuộc category (tuỳ bạn có cập nhật hay không)
-  @Prop({ type: Number, default: 0 })
-  itemsCount?: number;
-
-  @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
+  @Prop({
+    type: MongooseSchema.Types.Mixed,
+    default: {},
+  })
   extra?: Record<string, any>;
 }
 
 export const CategorySchema = SchemaFactory.createForClass(Category);
 
-// ===== Indexes =====
-CategorySchema.index(
-  { restaurantId: 1, slug: 1 },
-  { unique: true, partialFilterExpression: { slug: { $type: 'string' } } },
-);
-CategorySchema.index({ restaurantId: 1, parentId: 1, sortIndex: 1 });
+// Nếu có search text
 CategorySchema.index({ name: 'text', description: 'text' });

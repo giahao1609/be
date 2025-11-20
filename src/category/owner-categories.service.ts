@@ -7,8 +7,13 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schema/category.schema';
-import { CreateCategoryDto, ListCategoriesQueryDto, MoveCategoryDto, ReorderDto, UpdateCategoryDto } from './dto/category.dto';
-
+import {
+  CreateCategoryDto,
+  ListCategoriesQueryDto,
+  MoveCategoryDto,
+  ReorderDto,
+  UpdateCategoryDto,
+} from './dto/category.dto';
 
 @Injectable()
 export class AdminCategoriesService {
@@ -17,6 +22,7 @@ export class AdminCategoriesService {
     private readonly categoryModel: Model<CategoryDocument>,
   ) {}
 
+  // --- helpers ---
   private slugify(input: string) {
     return input
       .toLowerCase()
@@ -26,16 +32,12 @@ export class AdminCategoriesService {
       .replace(/(^-|-$)+/g, '');
   }
 
-  private async ensureUniqueSlug(
-    restaurantId: Types.ObjectId,
-    base: string,
-    excludeId?: Types.ObjectId,
-  ) {
+  private async ensureUniqueSlug(base: string, excludeId?: Types.ObjectId) {
     let slug = base;
     let n = 1;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const cond: any = { restaurantId, slug };
+      const cond: any = { slug };
       if (excludeId) cond._id = { $ne: excludeId };
       const exists = await this.categoryModel.exists(cond);
       if (!exists) return slug;
@@ -44,16 +46,11 @@ export class AdminCategoriesService {
     }
   }
 
-  private async buildTreeInfo(
-    restaurantId: Types.ObjectId,
-    parentId?: Types.ObjectId | null,
-  ) {
+  private async buildTreeInfo(parentId?: Types.ObjectId | null) {
     if (!parentId) {
       return { parentId: null, ancestors: [], depth: 0, pathPrefix: '' };
     }
-    const parent = await this.categoryModel
-      .findOne({ _id: parentId, restaurantId })
-      .lean();
+    const parent = await this.categoryModel.findOne({ _id: parentId }).lean();
     if (!parent) throw new BadRequestException('Parent category not found');
     const ancestors = [...(parent.ancestors ?? []), parent._id];
     const depth = (parent.depth ?? 0) + 1;
@@ -62,41 +59,36 @@ export class AdminCategoriesService {
   }
 
   private async assertNoCycle(
-    restaurantId: Types.ObjectId,
     categoryId: Types.ObjectId,
     newParentId?: Types.ObjectId | null,
   ) {
     if (!newParentId) return;
-    if (categoryId.equals(newParentId))
+    if (categoryId.equals(newParentId)) {
       throw new BadRequestException('Cannot move a category under itself');
+    }
 
     const descendant = await this.categoryModel.exists({
       _id: newParentId,
-      restaurantId,
       ancestors: categoryId,
     });
-    if (descendant)
+    if (descendant) {
       throw new BadRequestException('Cannot move category into its descendant');
+    }
   }
 
   // ---------- CRUD ----------
-  async create(restaurantId: string, dto: CreateCategoryDto) {
-    const restId = new Types.ObjectId(restaurantId);
 
+  async create(dto: CreateCategoryDto) {
     const { parentId: parentIdStr, name } = dto;
     const parentId = parentIdStr ? new Types.ObjectId(parentIdStr) : null;
 
     const slugBase = dto.slug?.trim() || this.slugify(name);
-    const uniqueSlug = await this.ensureUniqueSlug(restId, slugBase);
+    const uniqueSlug = await this.ensureUniqueSlug(slugBase);
 
-    const { ancestors, depth, pathPrefix } = await this.buildTreeInfo(
-      restId,
-      parentId,
-    );
+    const { ancestors, depth, pathPrefix } = await this.buildTreeInfo(parentId);
 
     try {
       const doc = await this.categoryModel.create({
-        restaurantId: restId,
         name: name.trim(),
         slug: uniqueSlug,
         description: dto.description,
@@ -112,23 +104,21 @@ export class AdminCategoriesService {
       return doc.toObject();
     } catch (e: any) {
       if (e?.code === 11000) {
-        throw new ConflictException('Slug already exists for this restaurant');
+        throw new ConflictException('Slug already exists');
       }
       throw e;
     }
   }
 
-  async findById(restaurantId: string, id: string) {
-    const doc = await this.categoryModel
-      .findOne({ _id: id, restaurantId })
-      .lean();
+  async findById(id: string) {
+    const doc = await this.categoryModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Category not found');
     return doc;
   }
 
-  async findBySlug(restaurantId: string, slug: string) {
+  async findBySlug(slug: string) {
     const doc = await this.categoryModel
-      .findOne({ slug: slug.toLowerCase(), restaurantId })
+      .findOne({ slug: slug.toLowerCase() })
       .lean();
     if (!doc) throw new NotFoundException('Category not found');
     return doc;
@@ -136,7 +126,6 @@ export class AdminCategoriesService {
 
   async list(qs: ListCategoriesQueryDto) {
     const {
-      restaurantId,
       q,
       isActive,
       parentId,
@@ -145,11 +134,11 @@ export class AdminCategoriesService {
       sort = 'sortIndex:asc,createdAt:desc',
     } = qs;
 
-    const filter: FilterQuery<Category> = {
-      restaurantId: new Types.ObjectId(restaurantId),
-    };
+    const filter: FilterQuery<Category> = {};
 
-    if (typeof isActive === 'boolean') filter.isActive = isActive;
+    if (typeof isActive === 'boolean') {
+      filter.isActive = isActive;
+    }
 
     if (parentId === (null as any) || parentId === 'null') {
       filter.parentId = null;
@@ -157,7 +146,9 @@ export class AdminCategoriesService {
       filter.parentId = new Types.ObjectId(parentId);
     }
 
-    if (q) filter.$text = { $search: q };
+    if (q) {
+      filter.$text = { $search: q };
+    }
 
     const sortSpec: Record<string, 1 | -1> = {};
     for (const part of sort.split(',')) {
@@ -187,24 +178,14 @@ export class AdminCategoriesService {
     };
   }
 
-  async updateById(
-    restaurantId: string,
-    id: string,
-    dto: UpdateCategoryDto,
-  ) {
-    const restId = new Types.ObjectId(restaurantId);
+  async updateById(id: string, dto: UpdateCategoryDto) {
     const catId = new Types.ObjectId(id);
 
     let nextSlug: string | undefined;
     if (dto.name && !dto.slug) {
-      nextSlug = await this.ensureUniqueSlug(
-        restId,
-        this.slugify(dto.name),
-        catId,
-      );
+      nextSlug = await this.ensureUniqueSlug(this.slugify(dto.name), catId);
     } else if (dto.slug) {
       nextSlug = await this.ensureUniqueSlug(
-        restId,
         dto.slug.trim().toLowerCase(),
         catId,
       );
@@ -215,12 +196,10 @@ export class AdminCategoriesService {
     if (dto.parentId !== undefined) {
       nextParentId = dto.parentId ? new Types.ObjectId(dto.parentId) : null;
       parentChanged = true;
-      await this.assertNoCycle(restId, catId, nextParentId ?? null);
+      await this.assertNoCycle(catId, nextParentId ?? null);
     }
 
-    const current = await this.categoryModel
-      .findOne({ _id: catId, restaurantId: restId })
-      .lean();
+    const current = await this.categoryModel.findOne({ _id: catId }).lean();
     if (!current) throw new NotFoundException('Category not found');
 
     let ancestors = current.ancestors ?? [];
@@ -228,7 +207,7 @@ export class AdminCategoriesService {
     let path = current.path ?? current.slug;
 
     if (parentChanged) {
-      const info = await this.buildTreeInfo(restId, nextParentId ?? null);
+      const info = await this.buildTreeInfo(nextParentId ?? null);
       ancestors = info.ancestors;
       depth = info.depth;
       const newSlug = nextSlug ?? current.slug;
@@ -244,7 +223,7 @@ export class AdminCategoriesService {
     try {
       const updated = await this.categoryModel
         .findOneAndUpdate(
-          { _id: catId, restaurantId: restId },
+          { _id: catId },
           {
             $set: {
               name: dto.name ?? current.name,
@@ -269,6 +248,7 @@ export class AdminCategoriesService {
 
       if (!updated) throw new NotFoundException('Category not found');
 
+      // cập nhật lại path/ancestors/depth cho toàn bộ con cháu
       if (parentChanged || nextSlug) {
         const oldPathPrefix = current.path ? `${current.path}/` : '';
         const newPathPrefix = updated.path ? `${updated.path}/` : '';
@@ -279,7 +259,7 @@ export class AdminCategoriesService {
 
         const descendants = await this.categoryModel
           .find(
-            { restaurantId: restId, ancestors: catId },
+            { ancestors: catId },
             { _id: 1, path: 1, depth: 1, ancestors: 1 },
           )
           .lean();
@@ -290,6 +270,7 @@ export class AdminCategoriesService {
             if (oldPathPrefix && nextPath.startsWith(oldPathPrefix)) {
               nextPath = newPathPrefix + nextPath.slice(oldPathPrefix.length);
             }
+
             const deltaDepth = newDepth - oldDepth;
             const nextDepth = (d.depth ?? 0) + deltaDepth;
 
@@ -313,37 +294,33 @@ export class AdminCategoriesService {
             };
           });
 
-          await this.categoryModel.bulkWrite(bulkOps, { ordered: false });
+          await this.categoryModel.bulkWrite(bulkOps as any, {
+            ordered: false,
+          });
         }
       }
 
       return updated;
     } catch (e: any) {
       if (e?.code === 11000) {
-        throw new ConflictException('Slug already exists for this restaurant');
+        throw new ConflictException('Slug already exists');
       }
       throw e;
     }
   }
 
-  async updateBySlug(
-    restaurantId: string,
-    slug: string,
-    dto: UpdateCategoryDto,
-  ) {
+  async updateBySlug(slug: string, dto: UpdateCategoryDto) {
     const doc = await this.categoryModel
-      .findOne({ restaurantId, slug: slug.toLowerCase() })
+      .findOne({ slug: slug.toLowerCase() })
       .lean();
     if (!doc) throw new NotFoundException('Category not found');
-    return this.updateById(restaurantId, String(doc._id), dto);
+    return this.updateById(String(doc._id), dto);
   }
 
-  async deleteById(restaurantId: string, id: string) {
-    const restId = new Types.ObjectId(restaurantId);
+  async deleteById(id: string) {
     const catId = new Types.ObjectId(id);
 
     const hasChild = await this.categoryModel.exists({
-      restaurantId: restId,
       parentId: catId,
     });
     if (hasChild) {
@@ -352,28 +329,30 @@ export class AdminCategoriesService {
       );
     }
 
-    const res = await this.categoryModel.deleteOne({
-      _id: catId,
-      restaurantId: restId,
-    });
-    if (res.deletedCount !== 1) throw new NotFoundException('Category not found');
+    const res = await this.categoryModel.deleteOne({ _id: catId });
+    if (res.deletedCount !== 1) {
+      throw new NotFoundException('Category not found');
+    }
+
     return { deleted: true };
   }
 
-  async deleteBySlug(restaurantId: string, slug: string) {
+  async deleteBySlug(slug: string) {
     const doc = await this.categoryModel
-      .findOne({ restaurantId, slug: slug.toLowerCase() }, { _id: 1 })
+      .findOne({ slug: slug.toLowerCase() }, { _id: 1 })
       .lean();
     if (!doc) throw new NotFoundException('Category not found');
-    return this.deleteById(restaurantId, String(doc._id));
+    return this.deleteById(String(doc._id));
   }
 
-  async reorder(restaurantId: string, body: ReorderDto) {
-    const restId = new Types.ObjectId(restaurantId);
+  async reorder(body: ReorderDto) {
+    if (!body.items?.length) {
+      return { matched: 0, modified: 0 };
+    }
 
     const ops = body.items.map((it) => ({
       updateOne: {
-        filter: { _id: new Types.ObjectId(it.id), restaurantId: restId },
+        filter: { _id: new Types.ObjectId(it.id) },
         update: { $set: { sortIndex: it.sortIndex } },
       },
     }));
@@ -388,26 +367,24 @@ export class AdminCategoriesService {
     };
   }
 
-  async move(restaurantId: string, id: string, dto: MoveCategoryDto) {
+  async move(id: string, dto: MoveCategoryDto) {
     // UpdateCategoryDto đã là PartialType(CreateCategoryDto) → truyền mỗi parentId OK
-    return this.updateById(restaurantId, id, {
+    return this.updateById(id, {
       parentId: dto.newParentId ?? null,
     } as UpdateCategoryDto);
   }
 
-  async getTree(restaurantId: string, parentId?: string | null) {
-    const restId = new Types.ObjectId(restaurantId);
-
-    let rootFilter: FilterQuery<Category> = { restaurantId: restId };
+  async getTree(parentId?: string | null) {
+    let rootParentId: Types.ObjectId | null | undefined;
     if (parentId === null || parentId === 'null' || parentId === undefined) {
-      rootFilter.parentId = null;
+      rootParentId = null;
     } else if (parentId) {
-      rootFilter.parentId = new Types.ObjectId(parentId);
+      rootParentId = new Types.ObjectId(parentId);
     }
 
     const nodes = await this.categoryModel
       .find(
-        { restaurantId: restId },
+        {},
         { _id: 1, name: 1, slug: 1, parentId: 1, sortIndex: 1, isActive: 1 },
       )
       .sort({ sortIndex: 1, name: 1 })
@@ -420,7 +397,7 @@ export class AdminCategoriesService {
       byParent.get(key)!.push(n);
     }
 
-    const build = (pidKey: string) => {
+    const build = (pidKey: string): any[] => {
       const arr = byParent.get(pidKey) ?? [];
       return arr.map((n) => ({
         ...n,
@@ -429,9 +406,9 @@ export class AdminCategoriesService {
     };
 
     const startKey =
-      rootFilter.parentId === null || rootFilter.parentId === undefined
+      rootParentId === null || rootParentId === undefined
         ? 'ROOT'
-        : String(rootFilter.parentId);
+        : String(rootParentId);
 
     return build(startKey);
   }

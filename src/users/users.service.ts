@@ -120,7 +120,7 @@ export class UsersService {
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
-        .select('-passwordHash -resetExpires') // không trả password
+        .select('-passwordHash -resetExpires') 
         .lean()
         .exec(),
       this.userModel.countDocuments(filter).exec(),

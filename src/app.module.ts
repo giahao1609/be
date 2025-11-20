@@ -16,6 +16,7 @@ import { UsersModule } from './users/users.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './database.module';
+import { CategoriesModule } from './category/categories.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { DatabaseModule } from './database.module';
     ReviewModule,
     UserHistoryModule,
     AdminModule,
+    CategoriesModule
   ],
 })
 export class AppModule {}

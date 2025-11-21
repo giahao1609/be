@@ -144,15 +144,16 @@ export class OwnerRestaurantsController {
     return this.restaurantsService.findDetail(idOrSlug);
   }
 
-  @Get(':ownerId/restaurants')
-  async listByOwner(
-    @Param('ownerId') ownerId: string,
+  @Get("get-by-owner")
+  async listMyRestaurants(
+    @CurrentUser() currentUser: any,
     @Query() query: OwnerRestaurantsQueryDto,
   ) {
-    if (!Types.ObjectId.isValid(ownerId)) {
-      throw new Error('Invalid ownerId');
+    if (!currentUser || !currentUser._id) {
+      throw new BadRequestException('Current user is required');
     }
-    return this.restaurantsService.findByOwnerId(ownerId, query);
+
+    return this.restaurantsService.findByOwnerId(currentUser._id, query);
   }
 
   @Get('nearby')

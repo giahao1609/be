@@ -31,9 +31,8 @@ import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 export class OwnerMenuItemsController {
   constructor(private readonly service: OwnerMenuItemsService) {}
 
-
-// owner-menu-items.controller.ts
-@Post()
+  // owner-menu-items.controller.ts
+  @Post()
   @UseInterceptors(
     FileFieldsInterceptor([{ name: 'images', maxCount: 24 }], {
       storage: memoryStorage(),
@@ -59,56 +58,54 @@ export class OwnerMenuItemsController {
     );
   }
 
-// UPDATE
-@Patch(':id')
-@UseInterceptors(
-  FileFieldsInterceptor([{ name: 'images', maxCount: 24 }], {
-    storage: memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 },
-  }),
-)
-async update(
-  @Param('restaurantId') restaurantId: string,
-  @Param('id') id: string,
-  @Body() body: UpdateMenuItemDto & Record<string, any>,
-  @UploadedFiles() files?: { images?: Express.Multer.File[] },
-) {
-  if (!Types.ObjectId.isValid(restaurantId)) {
-    throw new BadRequestException('Invalid restaurantId');
+  // UPDATE
+  @Patch(':id')
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'images', maxCount: 24 }], {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  async update(
+    @Param('restaurantId') restaurantId: string,
+    @Param('id') id: string,
+    @Body() body: UpdateMenuItemDto & Record<string, any>,
+    @UploadedFiles() files?: { images?: Express.Multer.File[] },
+  ) {
+    if (!Types.ObjectId.isValid(restaurantId)) {
+      throw new BadRequestException('Invalid restaurantId');
+    }
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid id');
+    }
+
+    // Các cờ điều khiển ảnh qua multipart:
+    const parseBool = (v: any) =>
+      typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
+    const parseJsonArray = (v: any): string[] => {
+      if (!v) return [];
+      try {
+        if (typeof v === 'string') return JSON.parse(v);
+        if (Array.isArray(v)) return v;
+      } catch {}
+      return [];
+    };
+
+    const flags = {
+      imagesMode:
+        (body.imagesMode as 'append' | 'replace' | 'remove') ?? 'append',
+      removeAllImages: parseBool(body.removeAllImages),
+      imagesRemovePaths: parseJsonArray(body.imagesRemovePaths),
+    };
+
+    return this.service.updateWithUploads(
+      restaurantId,
+      id,
+      body,
+      files?.images ?? [],
+      flags,
+    );
   }
-  if (!Types.ObjectId.isValid(id)) {
-    throw new BadRequestException('Invalid id');
-  }
-
-  // Các cờ điều khiển ảnh qua multipart:
-  const parseBool = (v: any) =>
-    typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
-  const parseJsonArray = (v: any): string[] => {
-    if (!v) return [];
-    try {
-      if (typeof v === 'string') return JSON.parse(v);
-      if (Array.isArray(v)) return v;
-    } catch {}
-    return [];
-  };
-
-  const flags = {
-    imagesMode:
-      (body.imagesMode as 'append' | 'replace' | 'remove') ?? 'append',
-    removeAllImages: parseBool(body.removeAllImages),
-    imagesRemovePaths: parseJsonArray(body.imagesRemovePaths),
-  };
-
-  return this.service.updateWithUploads(
-    restaurantId,
-    id,
-    body,
-    files?.images ?? [],
-    flags,
-  );
-}
-
-
 
   // @Post()
   // @UseInterceptors(
@@ -218,4 +215,12 @@ async update(
     }
     return this.service.removeById(restaurantId, id);
   }
+
+  // @Get(':id')
+  // async detail(@Param('id') id: string) {
+  //   if (!Types.ObjectId.isValid(id)) {
+  //     throw new BadRequestException('Invalid id');
+  //   }
+  //   return this.service.findById(id);
+  // }
 }

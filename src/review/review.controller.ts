@@ -15,6 +15,7 @@ import { memoryStorage } from 'multer';
 import { Types } from 'mongoose';
 
 import { ReviewService } from './review.service';
+import { CurrentUser } from 'src/decorators/current-user.decorator';
 
 @Controller('restaurants/:restaurantId/reviews')
 export class ReviewController {
@@ -29,6 +30,7 @@ export class ReviewController {
     }),
   )
   async create(
+    @CurrentUser() currentUser: any,
     @Param('restaurantId') restaurantId: string,
     @Body() body: Record<string, any>,
     @UploadedFiles()
@@ -38,11 +40,6 @@ export class ReviewController {
   ) {
     if (!Types.ObjectId.isValid(restaurantId)) {
       throw new BadRequestException('Invalid restaurantId');
-    }
-
-    const userId = String(body.userId || '').trim();
-    if (!userId) {
-      throw new BadRequestException('userId is required');
     }
 
     const content = String(body.content || '').trim();
@@ -56,7 +53,7 @@ export class ReviewController {
     }
 
     return this.reviewService.createWithUploads(
-      userId,
+      currentUser._id,
       restaurantId,
       {
         content,

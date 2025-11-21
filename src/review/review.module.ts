@@ -8,18 +8,21 @@ import {
   RestaurantSchema,
 } from '../restaurants/schema/restaurant.schema'; // ✅ Thêm dòng này
 import { UploadModule } from '../upload/upload.module';
+import { UsersService } from 'src/users/users.service';
+import { User, UserSchema } from 'src/users/schema/user.schema';
 
 @Module({
   imports: [
     // 🧱 Đăng ký cả Review và Restaurant cho Mongoose
     MongooseModule.forFeature([
       { name: Review.name, schema: ReviewSchema },
-      { name: Restaurant.name, schema: RestaurantSchema }, // ✅ Thêm dòng này để inject được RestaurantModel
+      { name: Restaurant.name, schema: RestaurantSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     forwardRef(() => UploadModule),
   ],
   controllers: [ReviewController],
-  providers: [ReviewService],
+  providers: [ReviewService, UsersService],
   exports: [ReviewService],
 })
 export class ReviewModule {}

@@ -629,4 +629,17 @@ export class OwnerMenuItemsService {
     // (tuỳ bạn) có thể xoá file trong GCS theo images ở đây, nhưng cẩn trọng vì có thể reuse
     return { ok: true, id, restaurantId };
   }
+
+  async findById(id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    const doc = await this.menuItemModel.findById(id).lean();
+    if (!doc) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    return this.expandSignedUrls(doc);
+  }
 }

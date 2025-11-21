@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 @Schema({ _id: false })
-class Money {
+export class Money {
   @Prop({ type: String, uppercase: true, trim: true, default: 'VND' })
   currency?: string;
 

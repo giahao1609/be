@@ -79,7 +79,6 @@ export class OwnerMenuItemsController {
       throw new BadRequestException('Invalid id');
     }
 
-    // Các cờ điều khiển ảnh qua multipart:
     const parseBool = (v: any) =>
       typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
     const parseJsonArray = (v: any): string[] => {

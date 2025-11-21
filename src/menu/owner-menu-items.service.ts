@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, FilterQuery, Types, UpdateQuery } from 'mongoose';
@@ -80,18 +81,93 @@ export class OwnerMenuItemsService {
     return out;
   }
 
-  // ---------- CREATE ----------
-  async create(dto: CreateMenuItemDto, images?: Express.Multer.File[]) {
-    const restaurantId = dto.restaurantId;
+  // // ---------- CREATE ----------
+  // async create(dto: CreateMenuItemDto, images?: Express.Multer.File[]) {
+  //   const restaurantId = dto.restaurantId;
+  //   const restObj = new Types.ObjectId(restaurantId);
+
+  //   // slug
+  //   let slug = (dto.slug ?? this.slugify(dto.name)).trim().toLowerCase();
+  //   slug = await this.ensureUniqueSlugWithinRestaurant(restaurantId, slug);
+
+  //   // upload images (if provided)
+  //   let imagePaths: string[] = Array.isArray(dto.images) ? dto.images : [];
+  //   if (images?.length) {
+  //     const up = await this.uploadService.uploadMultipleToGCS(
+  //       images,
+  //       `restaurants/${restaurantId}/menu-items/${slug}/images`,
+  //     );
+  //     imagePaths = [...imagePaths, ...(up.paths ?? [])];
+  //     imagePaths = this.uniq(imagePaths);
+  //   }
+
+  //   try {
+  //     const created = await this.menuItemModel.create({
+  //       restaurantId: restObj,
+  //       categoryId: dto.categoryId
+  //         ? new Types.ObjectId(dto.categoryId)
+  //         : undefined,
+  //       name: dto.name,
+  //       slug,
+  //       description: dto.description?.trim(),
+
+  //       images: imagePaths,
+  //       tags: this.uniq(dto.tags),
+  //       cuisines: this.uniq(dto.cuisines),
+  //       itemType: dto.itemType ?? 'food',
+
+  //       basePrice: dto.basePrice,
+  //       compareAtPrice: dto.compareAtPrice,
+
+  //       variants: dto.variants ?? [],
+  //       optionGroups: dto.optionGroups ?? [],
+  //       promotions: dto.promotions ?? [],
+
+  //       vegetarian: !!dto.vegetarian,
+  //       vegan: !!dto.vegan,
+  //       halal: !!dto.halal,
+  //       glutenFree: !!dto.glutenFree,
+  //       allergens: this.uniq(dto.allergens),
+  //       spicyLevel: dto.spicyLevel ?? 0,
+
+  //       isAvailable: dto.isAvailable ?? true,
+  //       sortIndex: dto.sortIndex ?? 0,
+
+  //       extra: (dto as any).extra ?? {},
+  //     });
+
+  //     const lean = created.toObject();
+  //     return this.expandSignedUrls(lean);
+  //   } catch (err: any) {
+  //     // bắt lỗi unique slug theo index compound
+  //     if (err?.code === 11000 && err?.keyPattern?.slug) {
+  //       throw new ConflictException('Slug already exists for this restaurant');
+  //     }
+  //     throw err;
+  //   }
+  // }
+
+  async createWithUploads(
+    dto: CreateMenuItemDto,
+    restaurantId: string,
+    images: Express.Multer.File[] = [],
+  ) {
+    if (!Types.ObjectId.isValid(restaurantId)) {
+      throw new BadRequestException('Invalid restaurantId');
+    }
+
     const restObj = new Types.ObjectId(restaurantId);
 
     // slug
-    let slug = (dto.slug ?? this.slugify(dto.name)).trim().toLowerCase();
-    slug = await this.ensureUniqueSlugWithinRestaurant(restaurantId, slug);
+    const baseSlug = dto.slug ? this.slugify(dto.slug) : this.slugify(dto.name);
+    let slug = await this.ensureUniqueSlugWithinRestaurant(
+      restaurantId,
+      baseSlug,
+    );
 
     // upload images (if provided)
     let imagePaths: string[] = Array.isArray(dto.images) ? dto.images : [];
-    if (images?.length) {
+    if (images.length) {
       const up = await this.uploadService.uploadMultipleToGCS(
         images,
         `restaurants/${restaurantId}/menu-items/${slug}/images`,
@@ -138,7 +214,6 @@ export class OwnerMenuItemsService {
       const lean = created.toObject();
       return this.expandSignedUrls(lean);
     } catch (err: any) {
-      // bắt lỗi unique slug theo index compound
       if (err?.code === 11000 && err?.keyPattern?.slug) {
         throw new ConflictException('Slug already exists for this restaurant');
       }
@@ -146,6 +221,150 @@ export class OwnerMenuItemsService {
     }
   }
 
+  // ===== UPDATE WITH UPLOADS =====
+  async updateWithUploads(
+    restaurantId: string,
+    id: string,
+    dto: UpdateMenuItemDto,
+    images: Express.Multer.File[] = [],
+    flags?: ImageFlags,
+  ) {
+    const restObj = new Types.ObjectId(restaurantId);
+    const filter: FilterQuery<MenuItemDocument> = {
+      _id: new Types.ObjectId(id),
+      restaurantId: restObj,
+    };
+
+    const current = await this.menuItemModel.findOne(filter).lean();
+    if (!current) throw new NotFoundException('Menu item not found');
+
+    const update: UpdateQuery<MenuItemDocument> = { $set: {} as any };
+
+    // slug uniqueness (per restaurant)
+    if (dto.slug && dto.slug.trim()) {
+      const base = this.slugify(dto.slug);
+      const ensured = await this.ensureUniqueSlugWithinRestaurant(
+        restaurantId,
+        base,
+        String(current._id),
+      );
+      (update.$set as any).slug = ensured;
+    }
+
+    // simple fields
+    const simple: (keyof any)[] = [
+      'name',
+      'description',
+      'tags',
+      'cuisines',
+      'itemType',
+      'basePrice',
+      'compareAtPrice',
+      'variants',
+      'optionGroups',
+      'promotions',
+      'vegetarian',
+      'vegan',
+      'halal',
+      'glutenFree',
+      'allergens',
+      'spicyLevel',
+      'isAvailable',
+      'sortIndex',
+      'extra',
+      'categoryId',
+    ];
+    for (const f of simple) {
+      if (f in dto) (update.$set as any)[f] = (dto as any)[f];
+    }
+    if (dto.categoryId) {
+      (update.$set as any).categoryId = new Types.ObjectId(dto.categoryId);
+    }
+
+    // images decision
+    const flagsSafe: ImageFlags = {
+      imagesMode: flags?.imagesMode ?? 'append',
+      removeAllImages: !!flags?.removeAllImages,
+      imagesRemovePaths: Array.isArray(flags?.imagesRemovePaths)
+        ? flags!.imagesRemovePaths!
+        : [],
+    };
+
+    let nextImages = Array.isArray(current.images) ? [...current.images] : [];
+
+    // remove
+    if (flagsSafe.imagesMode === 'remove' || flagsSafe.removeAllImages) {
+      nextImages = flagsSafe.removeAllImages
+        ? []
+        : nextImages.filter(
+            (p) => !new Set(flagsSafe.imagesRemovePaths).has(p),
+          );
+    }
+
+    // replace
+    if (flagsSafe.imagesMode === 'replace') {
+      if (images.length) {
+        const slug =
+          (update.$set as any).slug ??
+          current.slug ??
+          this.slugify(current.name);
+        const up = await this.uploadService.uploadMultipleToGCS(
+          images,
+          `restaurants/${restaurantId}/menu-items/${slug}/images`,
+        );
+        nextImages = up.paths ?? [];
+      } else if (Array.isArray((dto as any).images)) {
+        nextImages = (dto as any).images!;
+      }
+    }
+
+    // append
+    if (flagsSafe.imagesMode === 'append') {
+      if (images.length) {
+        const slug =
+          (update.$set as any).slug ??
+          current.slug ??
+          this.slugify(current.name);
+        const up = await this.uploadService.uploadMultipleToGCS(
+          images,
+          `restaurants/${restaurantId}/menu-items/${slug}/images`,
+        );
+        nextImages = this.uniq([...nextImages, ...(up.paths ?? [])]);
+      }
+      if (Array.isArray((dto as any).images)) {
+        nextImages = this.uniq([
+          ...nextImages,
+          ...((dto as any).images as string[]),
+        ]);
+      }
+      if (flagsSafe.imagesRemovePaths?.length) {
+        const rm = new Set(flagsSafe.imagesRemovePaths);
+        nextImages = nextImages.filter((p) => !rm.has(p));
+      }
+    }
+
+    // set if changed
+    const changed =
+      nextImages.length !== (current.images?.length ?? 0) ||
+      nextImages.some((p, i) => p !== current.images?.[i]);
+    if (changed) (update.$set as any).images = nextImages;
+
+    (update.$set as any).updatedAt = new Date();
+
+    try {
+      const updated = await this.menuItemModel
+        .findOneAndUpdate(filter, update, { new: true, lean: true })
+        .exec();
+      if (!updated) throw new NotFoundException('Menu item not found');
+
+      return this.expandSignedUrls(updated);
+    } catch (err: any) {
+      if (err?.code === 11000 && err?.keyPattern?.slug) {
+        throw new ConflictException('Slug already exists for this restaurant');
+      }
+      throw err;
+    }
+  }
   // ---------- LIST ----------
   async findMany(restaurantId: string, q: QueryMenuItemsDto) {
     const restObj = new Types.ObjectId(restaurantId);
@@ -254,151 +473,151 @@ export class OwnerMenuItemsService {
     return this.expandSignedUrls(doc);
   }
 
-  // ---------- UPDATE ----------
-  async updateById(
-    restaurantId: string,
-    id: string,
-    dto: UpdateMenuItemDto,
-    images?: Express.Multer.File[],
-    flags?: ImageFlags,
-  ) {
-    const restObj = new Types.ObjectId(restaurantId);
-    const filter: FilterQuery<MenuItemDocument> = {
-      _id: new Types.ObjectId(id),
-      restaurantId: restObj,
-    };
+  // // ---------- UPDATE ----------
+  // async updateById(
+  //   restaurantId: string,
+  //   id: string,
+  //   dto: UpdateMenuItemDto,
+  //   images?: Express.Multer.File[],
+  //   flags?: ImageFlags,
+  // ) {
+  //   const restObj = new Types.ObjectId(restaurantId);
+  //   const filter: FilterQuery<MenuItemDocument> = {
+  //     _id: new Types.ObjectId(id),
+  //     restaurantId: restObj,
+  //   };
 
-    const current = await this.menuItemModel.findOne(filter).lean();
-    if (!current) throw new NotFoundException('Menu item not found');
+  //   const current = await this.menuItemModel.findOne(filter).lean();
+  //   if (!current) throw new NotFoundException('Menu item not found');
 
-    const update: UpdateQuery<MenuItemDocument> = { $set: {} as any };
-    const $unset: Record<string, ''> = {};
+  //   const update: UpdateQuery<MenuItemDocument> = { $set: {} as any };
+  //   const $unset: Record<string, ''> = {};
 
-    // slug uniqueness (per restaurant)
-    if (dto.slug && dto.slug.trim()) {
-      const base = this.slugify(dto.slug);
-      const ensured = await this.ensureUniqueSlugWithinRestaurant(
-        restaurantId,
-        base,
-        String(current._id),
-      );
-      (update.$set as any).slug = ensured;
-    }
+  //   // slug uniqueness (per restaurant)
+  //   if (dto.slug && dto.slug.trim()) {
+  //     const base = this.slugify(dto.slug);
+  //     const ensured = await this.ensureUniqueSlugWithinRestaurant(
+  //       restaurantId,
+  //       base,
+  //       String(current._id),
+  //     );
+  //     (update.$set as any).slug = ensured;
+  //   }
 
-    // simple fields
-    const simple: (keyof any)[] = [
-      'name',
-      'description',
-      'tags',
-      'cuisines',
-      'itemType',
-      'basePrice',
-      'compareAtPrice',
-      'variants',
-      'optionGroups',
-      'promotions',
-      'vegetarian',
-      'vegan',
-      'halal',
-      'glutenFree',
-      'allergens',
-      'spicyLevel',
-      'isAvailable',
-      'sortIndex',
-      'extra',
-      'categoryId',
-    ];
-    for (const f of simple) {
-      if (f in dto) (update.$set as any)[f] = (dto as any)[f];
-    }
-    if (dto.categoryId) {
-      (update.$set as any).categoryId = new Types.ObjectId(dto.categoryId);
-    }
+  //   // simple fields
+  //   const simple: (keyof any)[] = [
+  //     'name',
+  //     'description',
+  //     'tags',
+  //     'cuisines',
+  //     'itemType',
+  //     'basePrice',
+  //     'compareAtPrice',
+  //     'variants',
+  //     'optionGroups',
+  //     'promotions',
+  //     'vegetarian',
+  //     'vegan',
+  //     'halal',
+  //     'glutenFree',
+  //     'allergens',
+  //     'spicyLevel',
+  //     'isAvailable',
+  //     'sortIndex',
+  //     'extra',
+  //     'categoryId',
+  //   ];
+  //   for (const f of simple) {
+  //     if (f in dto) (update.$set as any)[f] = (dto as any)[f];
+  //   }
+  //   if (dto.categoryId) {
+  //     (update.$set as any).categoryId = new Types.ObjectId(dto.categoryId);
+  //   }
 
-    // images decision
-    const flagsSafe: ImageFlags = {
-      imagesMode: flags?.imagesMode ?? 'append',
-      removeAllImages: !!flags?.removeAllImages,
-      imagesRemovePaths: Array.isArray(flags?.imagesRemovePaths)
-        ? flags!.imagesRemovePaths!
-        : [],
-    };
+  //   // images decision
+  //   const flagsSafe: ImageFlags = {
+  //     imagesMode: flags?.imagesMode ?? 'append',
+  //     removeAllImages: !!flags?.removeAllImages,
+  //     imagesRemovePaths: Array.isArray(flags?.imagesRemovePaths)
+  //       ? flags!.imagesRemovePaths!
+  //       : [],
+  //   };
 
-    let nextImages = Array.isArray(current.images) ? [...current.images] : [];
+  //   let nextImages = Array.isArray(current.images) ? [...current.images] : [];
 
-    // remove
-    if (flagsSafe.imagesMode === 'remove' || flagsSafe.removeAllImages) {
-      nextImages = flagsSafe.removeAllImages
-        ? []
-        : nextImages.filter(
-            (p) => !new Set(flagsSafe.imagesRemovePaths).has(p),
-          );
-    }
+  //   // remove
+  //   if (flagsSafe.imagesMode === 'remove' || flagsSafe.removeAllImages) {
+  //     nextImages = flagsSafe.removeAllImages
+  //       ? []
+  //       : nextImages.filter(
+  //           (p) => !new Set(flagsSafe.imagesRemovePaths).has(p),
+  //         );
+  //   }
 
-    // replace
-    if (flagsSafe.imagesMode === 'replace') {
-      if (images?.length) {
-        const slug =
-          (update.$set as any).slug ??
-          current.slug ??
-          this.slugify(current.name);
-        const up = await this.uploadService.uploadMultipleToGCS(
-          images,
-          `restaurants/${restaurantId}/menu-items/${slug}/images`,
-        );
-        nextImages = up.paths ?? [];
-      } else if (Array.isArray((dto as any).images)) {
-        nextImages = (dto as any).images!;
-      }
-    }
+  //   // replace
+  //   if (flagsSafe.imagesMode === 'replace') {
+  //     if (images?.length) {
+  //       const slug =
+  //         (update.$set as any).slug ??
+  //         current.slug ??
+  //         this.slugify(current.name);
+  //       const up = await this.uploadService.uploadMultipleToGCS(
+  //         images,
+  //         `restaurants/${restaurantId}/menu-items/${slug}/images`,
+  //       );
+  //       nextImages = up.paths ?? [];
+  //     } else if (Array.isArray((dto as any).images)) {
+  //       nextImages = (dto as any).images!;
+  //     }
+  //   }
 
-    // append
-    if (flagsSafe.imagesMode === 'append') {
-      if (images?.length) {
-        const slug =
-          (update.$set as any).slug ??
-          current.slug ??
-          this.slugify(current.name);
-        const up = await this.uploadService.uploadMultipleToGCS(
-          images,
-          `restaurants/${restaurantId}/menu-items/${slug}/images`,
-        );
-        nextImages = this.uniq([...nextImages, ...(up.paths ?? [])]);
-      }
-      if (Array.isArray((dto as any).images)) {
-        nextImages = this.uniq([
-          ...nextImages,
-          ...((dto as any).images as string[]),
-        ]);
-      }
-      if (flagsSafe.imagesRemovePaths?.length) {
-        const rm = new Set(flagsSafe.imagesRemovePaths);
-        nextImages = nextImages.filter((p) => !rm.has(p));
-      }
-    }
+  //   // append
+  //   if (flagsSafe.imagesMode === 'append') {
+  //     if (images?.length) {
+  //       const slug =
+  //         (update.$set as any).slug ??
+  //         current.slug ??
+  //         this.slugify(current.name);
+  //       const up = await this.uploadService.uploadMultipleToGCS(
+  //         images,
+  //         `restaurants/${restaurantId}/menu-items/${slug}/images`,
+  //       );
+  //       nextImages = this.uniq([...nextImages, ...(up.paths ?? [])]);
+  //     }
+  //     if (Array.isArray((dto as any).images)) {
+  //       nextImages = this.uniq([
+  //         ...nextImages,
+  //         ...((dto as any).images as string[]),
+  //       ]);
+  //     }
+  //     if (flagsSafe.imagesRemovePaths?.length) {
+  //       const rm = new Set(flagsSafe.imagesRemovePaths);
+  //       nextImages = nextImages.filter((p) => !rm.has(p));
+  //     }
+  //   }
 
-    // set if changed
-    const changed =
-      nextImages.length !== (current.images?.length ?? 0) ||
-      nextImages.some((p, i) => p !== current.images?.[i]);
-    if (changed) (update.$set as any).images = nextImages;
+  //   // set if changed
+  //   const changed =
+  //     nextImages.length !== (current.images?.length ?? 0) ||
+  //     nextImages.some((p, i) => p !== current.images?.[i]);
+  //   if (changed) (update.$set as any).images = nextImages;
 
-    (update.$set as any).updatedAt = new Date();
+  //   (update.$set as any).updatedAt = new Date();
 
-    try {
-      const updated = await this.menuItemModel
-        .findOneAndUpdate(filter, update, { new: true, lean: true })
-        .exec();
-      if (!updated) throw new NotFoundException('Menu item not found');
+  //   try {
+  //     const updated = await this.menuItemModel
+  //       .findOneAndUpdate(filter, update, { new: true, lean: true })
+  //       .exec();
+  //     if (!updated) throw new NotFoundException('Menu item not found');
 
-      return this.expandSignedUrls(updated);
-    } catch (err: any) {
-      if (err?.code === 11000 && err?.keyPattern?.slug) {
-        throw new ConflictException('Slug already exists for this restaurant');
-      }
-      throw err;
-    }
-  }
+  //     return this.expandSignedUrls(updated);
+  //   } catch (err: any) {
+  //     if (err?.code === 11000 && err?.keyPattern?.slug) {
+  //       throw new ConflictException('Slug already exists for this restaurant');
+  //     }
+  //     throw err;
+  //   }
+  // }
 
   // ---------- DELETE ----------
   async removeById(restaurantId: string, id: string) {

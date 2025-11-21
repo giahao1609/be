@@ -17,6 +17,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './database.module';
 import { CategoriesModule } from './category/categories.module';
+import { OwnerMenuItemsModule } from './menu/owner-menu-items.module';
 
 @Module({
   imports: [
@@ -53,7 +54,8 @@ import { CategoriesModule } from './category/categories.module';
     ReviewModule,
     UserHistoryModule,
     AdminModule,
-    CategoriesModule
+    CategoriesModule,
+    OwnerMenuItemsModule
   ],
 })
 export class AppModule {}

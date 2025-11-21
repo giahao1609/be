@@ -1,22 +1,30 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { Restaurant } from '../../restaurants/schema/restaurant.schema';
+
+export type ReviewDocument = HydratedDocument<Review>;
 
 @Schema({ timestamps: true })
-export class Review extends Document {
+export class Review {
   @Prop({ required: true })
-  userId: string;
+  userId!: string; // có thể là userId từ auth (string)
 
-  @Prop({ required: true })
-  restaurantId: string;
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: Restaurant.name,
+    required: true,
+    index: true,
+  })
+  restaurantId!: Types.ObjectId;
 
-  @Prop({ required: true })
-  content: string;
+  @Prop({ required: true, trim: true })
+  content!: string;
 
   @Prop({ type: [String], default: [] })
-  images: string[]; // ✅ danh sách ảnh review
+  images!: string[];
 
-  @Prop({ default: 0 })
-  rating: number;
+  @Prop({ type: Number, default: 0, min: 0, max: 5 })
+  rating!: number;
 }
 
 export const ReviewSchema = SchemaFactory.createForClass(Review);

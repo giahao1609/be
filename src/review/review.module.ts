@@ -13,7 +13,6 @@ import { User, UserSchema } from 'src/users/schema/user.schema';
 
 @Module({
   imports: [
-    // 🧱 Đăng ký cả Review và Restaurant cho Mongoose
     MongooseModule.forFeature([
       { name: Review.name, schema: ReviewSchema },
       { name: Restaurant.name, schema: RestaurantSchema },

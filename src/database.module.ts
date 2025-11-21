@@ -12,7 +12,7 @@ import { MongooseModule } from '@nestjs/mongoose';
         return {
           uri: dbUri,
           dbName: database,
-          autoIndex: false,
+          autoIndex: true,
         };
       },
       inject: [ConfigService],

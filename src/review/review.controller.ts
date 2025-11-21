@@ -1,68 +1,159 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
-  Put,
-  Delete,
   UploadedFiles,
   UseInterceptors,
-} from "@nestjs/common";
-import { FilesInterceptor } from "@nestjs/platform-express";
-import { ReviewService } from "./review.service";
+} from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { Types } from 'mongoose';
 
-@Controller("review")
+import { ReviewService } from './review.service';
+
+@Controller('restaurants/:restaurantId/reviews')
 export class ReviewController {
   constructor(private readonly reviewService: ReviewService) {}
 
-  /** 🆕 Tạo review mới (có rating & ảnh) */
-  @Post(":userId/:restaurantId")
-  @UseInterceptors(FilesInterceptor("files", 10))
-  async createReview(
-    @Param("userId") userId: string,
-    @Param("restaurantId") restaurantId: string,
-    @Body("content") content: string,
-    @Body("rating") rating: number,
-    @UploadedFiles() files: Express.Multer.File[]
+  // ===== CREATE =====
+  @Post()
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'images', maxCount: 24 }], {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    }),
+  )
+  async create(
+    @Param('restaurantId') restaurantId: string,
+    @Body() body: Record<string, any>,
+    @UploadedFiles()
+    files?: {
+      images?: Express.Multer.File[];
+    },
   ) {
-    return this.reviewService.createReview(userId, restaurantId, content, Number(rating), files);
-  }
-
-  /** ✏️ Cập nhật review (bao gồm rating, ảnh, nội dung) */
-  @Put(":id")
-  @UseInterceptors(FilesInterceptor("files", 10))
-  async updateReview(
-    @Param("id") id: string,
-    @Body("content") content: string,
-    @Body("rating") rating: number,
-    @Body("keepImages") keepImages: string[] | string,
-    @UploadedFiles() files: Express.Multer.File[]
-  ) {
-    // Nếu keepImages là chuỗi JSON (do form gửi), parse lại
-    let parsedImages: string[] = [];
-    if (typeof keepImages === "string") {
-      try {
-        parsedImages = JSON.parse(keepImages);
-      } catch {
-        parsedImages = [];
-      }
-    } else if (Array.isArray(keepImages)) {
-      parsedImages = keepImages;
+    if (!Types.ObjectId.isValid(restaurantId)) {
+      throw new BadRequestException('Invalid restaurantId');
     }
 
-    return this.reviewService.updateReview(id, content, Number(rating), parsedImages, files);
+    const userId = String(body.userId || '').trim();
+    if (!userId) {
+      throw new BadRequestException('userId is required');
+    }
+
+    const content = String(body.content || '').trim();
+    if (!content) {
+      throw new BadRequestException('content is required');
+    }
+
+    const ratingNum = Number(body.rating ?? 0);
+    if (!Number.isFinite(ratingNum) || ratingNum < 0 || ratingNum > 5) {
+      throw new BadRequestException('rating must be between 0 and 5');
+    }
+
+    return this.reviewService.createWithUploads(
+      userId,
+      restaurantId,
+      {
+        content,
+        rating: ratingNum,
+      },
+      files?.images ?? [],
+    );
   }
 
-  /** 🗑️ Xoá review */
-  @Delete(":id")
-  async deleteReview(@Param("id") id: string) {
-    return this.reviewService.deleteReview(id);
+  // ===== UPDATE =====
+  @Patch(':id')
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'images', maxCount: 24 }], {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  async update(
+    @Param('restaurantId') restaurantId: string,
+    @Param('id') id: string,
+    @Body() body: Record<string, any>,
+    @UploadedFiles()
+    files?: {
+      images?: Express.Multer.File[];
+    },
+  ) {
+    if (!Types.ObjectId.isValid(restaurantId)) {
+      throw new BadRequestException('Invalid restaurantId');
+    }
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid id');
+    }
+
+    const content = String(body.content || '').trim();
+    const ratingRaw = body.rating;
+    const rating =
+      ratingRaw === undefined || ratingRaw === null
+        ? undefined
+        : Number(ratingRaw);
+
+    // helper parse flags giống owner-menu-items
+    const parseBool = (v: any) =>
+      typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
+
+    const parseJsonArray = (v: any): string[] => {
+      if (!v) return [];
+      try {
+        if (typeof v === 'string') return JSON.parse(v);
+        if (Array.isArray(v)) return v;
+      } catch {
+        return [];
+      }
+      return [];
+    };
+
+    const flags = {
+      imagesMode:
+        (body.imagesMode as 'append' | 'replace' | 'remove') ?? 'append',
+      removeAllImages: parseBool(body.removeAllImages),
+      imagesRemovePaths: parseJsonArray(body.imagesRemovePaths),
+    };
+
+    return this.reviewService.updateWithUploads(
+      restaurantId,
+      id,
+      {
+        content,
+        rating,
+      },
+      files?.images ?? [],
+      flags,
+    );
   }
 
-  /** 📋 Lấy danh sách review theo quán (mới nhất trước) */
-  @Get("restaurant/:restaurantId")
-  async getByRestaurant(@Param("restaurantId") restaurantId: string) {
+  // ===== DELETE =====
+  @Delete(':id')
+  async delete(
+    @Param('restaurantId') restaurantId: string,
+    @Param('id') id: string,
+  ) {
+    if (!Types.ObjectId.isValid(restaurantId)) {
+      throw new BadRequestException('Invalid restaurantId');
+    }
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid id');
+    }
+
+    return this.reviewService.deleteReview(restaurantId, id);
+  }
+
+  // ===== LIST BY RESTAURANT =====
+  // GET /restaurants/:restaurantId/reviews
+  @Get()
+  async getByRestaurant(@Param('restaurantId') restaurantId: string) {
+    if (!Types.ObjectId.isValid(restaurantId)) {
+      throw new BadRequestException('Invalid restaurantId');
+    }
     return this.reviewService.getReviewsByRestaurant(restaurantId);
   }
 }

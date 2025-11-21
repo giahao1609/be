@@ -1217,114 +1217,149 @@ async updateByIdWithUploads(
       .filter(Boolean);
   }
   // ===== LIST =====
-  async findMany(q: QueryRestaurantsDto) {
-    const page = Math.max(1, Number(q.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
-    const skip = (page - 1) * limit;
+// ===== LIST =====
+async findMany(q: QueryRestaurantsDto) {
+  const page = Math.max(1, Number(q.page ?? 1));
+  const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
+  const skip = (page - 1) * limit;
 
-    const tagList = this.parseCsv(q.tags);
-    const cuisineList = this.parseCsv(q.cuisine);
+  const tagList = this.parseCsv(q.tags);
+  const cuisineList = this.parseCsv(q.cuisine);
 
-    const baseFilter: FilterQuery<RestaurantDocument> = {};
-    if (q.isActive === 'true') baseFilter.isActive = true;
-    if (q.isActive === 'false') baseFilter.isActive = false;
+  const baseFilter: FilterQuery<RestaurantDocument> = {};
 
-    if (q.ownerId) baseFilter.ownerId = new Types.ObjectId(q.ownerId);
-    if (q.categoryId) baseFilter.categoryId = new Types.ObjectId(q.categoryId);
+  // isActive filter
+  if (q.isActive === 'true') baseFilter.isActive = true;
+  if (q.isActive === 'false') baseFilter.isActive = false;
 
-    if (q.country) baseFilter['address.country'] = q.country.toUpperCase();
-    if (q.city) baseFilter['address.city'] = q.city;
-    if (q.district) baseFilter['address.district'] = q.district;
-    if (q.ward) baseFilter['address.ward'] = q.ward;
+  // owner / category
+  if (q.ownerId) baseFilter.ownerId = new Types.ObjectId(q.ownerId);
+  if (q.categoryId) baseFilter.categoryId = new Types.ObjectId(q.categoryId);
 
-    if (tagList.length) baseFilter.tags = { $all: tagList };
-    if (cuisineList.length) baseFilter.cuisine = { $all: cuisineList };
+  // address filters
+  if (q.country) baseFilter['address.country'] = q.country.toUpperCase();
+  if (q.city) baseFilter['address.city'] = q.city;
+  if (q.district) baseFilter['address.district'] = q.district;
+  if (q.ward) baseFilter['address.ward'] = q.ward;
 
-    const hasCoords = Number.isFinite(q.lat) && Number.isFinite(q.lng);
-    const wantDistanceSort = q.sort === 'distance' && hasCoords;
+  // tags / cuisine
+  if (tagList.length) baseFilter.tags = { $all: tagList };
+  if (cuisineList.length) baseFilter.cuisine = { $all: cuisineList };
 
-    // Pipeline
-    const pipeline: any[] = [];
+  // toạ độ (ép Number cho chắc)
+  const lat = q.lat !== undefined && q.lat !== null ? Number(q.lat) : undefined;
+  const lng = q.lng !== undefined && q.lng !== null ? Number(q.lng) : undefined;
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
 
-    // GeoNear must be first stage if used
-    if (hasCoords) {
-      pipeline.push({
-        $geoNear: {
-          near: { type: 'Point', coordinates: [Number(q.lng), Number(q.lat)] },
-          distanceField: 'distance',
-          spherical: true,
-          ...(q.radius ? { maxDistance: Number(q.radius) } : {}),
-          query: baseFilter,
-        },
-      });
-    } else {
-      // No geoNear → normal match
-      if (Object.keys(baseFilter).length) pipeline.push({ $match: baseFilter });
-    }
+  const wantDistanceSort = q.sort === 'distance' && hasCoords;
 
-    // Text search (uses compound text index you created)
-    if (q.q && q.q.trim()) {
-      pipeline.push({
-        $match: { $text: { $search: q.q.trim() } },
-      });
-      // Optionally add score sort:
-      pipeline.push({
-        $addFields: { textScore: { $meta: 'textScore' } },
-      });
-    }
+  const textSearch = q.q && q.q.trim() ? q.q.trim() : undefined;
 
-    // Sort
-    if (wantDistanceSort) {
-      pipeline.push({ $sort: { distance: 1 } });
-    } else if (q.q && q.q.trim()) {
-      pipeline.push({ $sort: { textScore: -1, ...this.sortMap(q.sort) } });
-    } else {
-      pipeline.push({ $sort: this.sortMap(q.sort) });
-    }
+  // Pipeline
+  const pipeline: any[] = [];
 
-    // Facet for total & data
-    pipeline.push(
-      { $skip: skip },
-      { $limit: limit },
-      {
-        $project: {
-          /* lean projection if muốn */
-        },
+  // 1) GeoNear (nếu có toạ độ)
+  if (hasCoords) {
+    pipeline.push({
+      $geoNear: {
+        near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
+        distanceField: 'distance',
+        spherical: true,
+        ...(q.radius ? { maxDistance: Number(q.radius) } : {}),
+        query: baseFilter,
       },
-    );
-
-    // Count total (separate pipeline for performance clarity)
-    const countFilter = hasCoords
-      ? // Khi geoNear dùng query rồi, đếm lại theo filter + text
-        (() => {
-          const cf: any = { ...baseFilter };
-          if (q.q && q.q.trim()) cf.$text = { $search: q.q.trim() };
-          return cf;
-        })()
-      : (() => {
-          const cf: any = { ...baseFilter };
-          if (q.q && q.q.trim()) cf.$text = { $search: q.q.trim() };
-          return cf;
-        })();
-
-    const [items, total] = await Promise.all([
-      this.restaurantModel.aggregate(pipeline).exec(),
-      this.restaurantModel.countDocuments(countFilter).exec(),
-    ]);
-
-    // expand signed URLs
-    const withSigned = await Promise.all(
-      items.map((it) => this.expandSignedUrls(it)),
-    );
-
-    return {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit),
-      items: withSigned,
-    };
+    });
+  } else {
+    // 2) Không có geoNear → dùng $match bình thường
+    if (Object.keys(baseFilter).length) {
+      pipeline.push({ $match: baseFilter });
+    }
   }
+
+  // 3) Text search
+  if (textSearch) {
+    pipeline.push({
+      $match: { $text: { $search: textSearch } },
+    });
+
+    pipeline.push({
+      $addFields: { textScore: { $meta: 'textScore' } },
+    });
+  }
+
+  // 4) Sort
+  const sortObj = this.sortMap(q.sort) || {};
+  if (wantDistanceSort) {
+    pipeline.push({ $sort: { distance: 1 } });
+  } else if (textSearch) {
+    // sort theo textScore + custom sort nếu có
+    const textSort: any = { textScore: -1 };
+    for (const [k, v] of Object.entries(sortObj)) {
+      textSort[k] = v;
+    }
+    pipeline.push({ $sort: textSort });
+  } else if (Object.keys(sortObj).length) {
+    pipeline.push({ $sort: sortObj });
+  } else {
+    // fallback sort nếu sortMap không trả ra gì
+    pipeline.push({ $sort: { createdAt: -1 } });
+  }
+
+  // 5) Paging
+  pipeline.push(
+    { $skip: skip },
+    { $limit: limit },
+  );
+
+  // 6) Projection (KHÔNG để trống nữa)
+  pipeline.push({
+    $project: {
+      _id: 1,
+      ownerId: 1,
+      name: 1,
+      slug: 1,
+      description: 1,
+      tags: 1,
+      cuisine: 1,
+      address: 1,
+      isActive: 1,
+      isFeatured: 1,
+      logoImage: 1,
+      coverImage: 1,
+      gallery: 1,
+      averageRating: 1,
+      totalReviews: 1,
+      distance: 1,      // chỉ có nếu dùng geoNear
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  });
+
+  // ===== Count total =====
+  const countFilter: any = { ...baseFilter };
+  if (textSearch) {
+    countFilter.$text = { $search: textSearch };
+  }
+
+  const [items, total] = await Promise.all([
+    this.restaurantModel.aggregate(pipeline).exec(),
+    this.restaurantModel.countDocuments(countFilter).exec(),
+  ]);
+
+  // expand signed URLs
+  const withSigned = await Promise.all(
+    items.map((it) => this.expandSignedUrls(it)),
+  );
+
+  return {
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
+    items: withSigned,
+  };
+}
+
 
   // ===== DETAIL =====
   async findDetail(idOrSlug: string) {

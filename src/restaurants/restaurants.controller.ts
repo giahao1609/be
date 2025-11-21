@@ -35,7 +35,7 @@ type AuthUser = { sub?: string; id?: string; roles?: string[] };
 
 @Controller('owner/restaurants')
 @UseFilters(BusinessExceptionFilter)
-@UseGuards(JwtAuthGuard, RolesGuard)
+// @UseGuards(JwtAuthGuard, RolesGuard)
 export class OwnerRestaurantsController {
   constructor(private readonly restaurantsService: RestaurantsService) {}
 

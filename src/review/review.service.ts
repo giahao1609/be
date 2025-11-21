@@ -1,24 +1,82 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
-import { Review } from "./schema/review.schema";
-import { Restaurant } from "../restaurants/schema/restaurant.schema";
-import { UploadService } from "../upload/upload.service";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import {
+  FilterQuery,
+  Model,
+  Types,
+  UpdateQuery,
+} from 'mongoose';
+import { Review, ReviewDocument } from './schema/review.schema';
+import { Restaurant } from '../restaurants/schema/restaurant.schema';
+import { UploadService } from '../upload/upload.service';
+
+type ImageFlags = {
+  imagesMode?: 'append' | 'replace' | 'remove';
+  removeAllImages?: boolean;
+  imagesRemovePaths?: string[];
+};
+
+type CreateReviewInput = {
+  content: string;
+  rating: number;
+};
+
+type UpdateReviewInput = {
+  content?: string;
+  rating?: number;
+};
 
 @Injectable()
 export class ReviewService {
   constructor(
-    @InjectModel(Review.name) private readonly reviewModel: Model<Review>,
-    @InjectModel(Restaurant.name) private readonly restaurantModel: Model<Restaurant>,
-    private readonly uploadService: UploadService
+    @InjectModel(Review.name)
+    private readonly reviewModel: Model<ReviewDocument>,
+    @InjectModel(Restaurant.name)
+    private readonly restaurantModel: Model<Restaurant>,
+    private readonly uploadService: UploadService,
   ) {}
 
-  /** 🧮 Hàm cập nhật lại thống kê rating cho quán ăn */
+  // ===== RATING AGGREGATION =====
   private async updateRestaurantRating(restaurantId: string) {
-    const all = await this.reviewModel.find({ restaurantId });
-    const total = all.length;
+    const restObj = new Types.ObjectId(restaurantId);
 
-    if (total === 0) {
+    const stats = await this.reviewModel.aggregate([
+      { $match: { restaurantId: restObj } },
+      {
+        $group: {
+          _id: '$restaurantId',
+          avgRating: { $avg: '$rating' },
+          total: { $sum: 1 },
+          star1: {
+            $sum: {
+              $cond: [{ $eq: ['$rating', 1] }, 1, 0],
+            },
+          },
+          star2: {
+            $sum: {
+              $cond: [{ $eq: ['$rating', 2] }, 1, 0],
+            },
+          },
+          star3: {
+            $sum: {
+              $cond: [{ $eq: ['$rating', 3] }, 1, 0],
+            },
+          },
+          star4: {
+            $sum: {
+              $cond: [{ $eq: ['$rating', 4] }, 1, 0],
+            },
+          },
+          star5: {
+            $sum: {
+              $cond: [{ $eq: ['$rating', 5] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
+
+    if (!stats.length) {
       await this.restaurantModel.findByIdAndUpdate(restaurantId, {
         rating: 0,
         reviewsCount: 0,
@@ -27,95 +85,187 @@ export class ReviewService {
       return;
     }
 
-    const avg = all.reduce((sum, r) => sum + (r.rating || 0), 0) / total;
-    const breakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    for (const r of all) breakdown[r.rating]++;
+    const s = stats[0];
+    const avg = Number((s.avgRating || 0).toFixed(1));
+    const total = s.total || 0;
+    const breakdown = {
+      1: s.star1 || 0,
+      2: s.star2 || 0,
+      3: s.star3 || 0,
+      4: s.star4 || 0,
+      5: s.star5 || 0,
+    };
 
     await this.restaurantModel.findByIdAndUpdate(restaurantId, {
-      rating: Number(avg.toFixed(1)),
+      rating: avg,
       reviewsCount: total,
       ratingBreakdown: breakdown,
     });
   }
 
-  /** 🆕 Tạo review mới (có rating & ảnh) */
-  async createReview(
+  // ===== CREATE WITH UPLOADS =====
+  async createWithUploads(
     userId: string,
     restaurantId: string,
-    content: string,
-    rating: number,
-    files: Express.Multer.File[]
+    dto: CreateReviewInput,
+    images: Express.Multer.File[] = [],
   ) {
-    let uploadedUrls: string[] = [];
+    const restObj = new Types.ObjectId(restaurantId);
 
-    if (files && files.length > 0) {
-      const upload = await this.uploadService.uploadMultipleToGCS(
-        files,
-        `review/${restaurantId}/${userId}`
+    let imagePaths: string[] = [];
+
+    if (images.length) {
+      const up = await this.uploadService.uploadMultipleToGCS(
+        images,
+        `restaurants/${restaurantId}/reviews/${userId}`,
       );
-      uploadedUrls = upload.paths;
+      imagePaths = up.paths ?? [];
     }
 
-    const review = await this.reviewModel.create({
+    const created = await this.reviewModel.create({
       userId,
-      restaurantId,
-      content,
-      rating,
-      images: uploadedUrls,
+      restaurantId: restObj,
+      content: dto.content,
+      rating: dto.rating,
+      images: imagePaths,
     });
 
-    // 🔄 Cập nhật lại thống kê rating cho quán ăn
     await this.updateRestaurantRating(restaurantId);
 
-    return review;
+    return created.toObject();
   }
 
-  /** ✏️ Sửa review (bao gồm nội dung, ảnh, rating) */
-  async updateReview(
+  // ===== UPDATE WITH UPLOADS =====
+  async updateWithUploads(
+    restaurantId: string,
     id: string,
-    content: string,
-    rating: number,
-    keepImages: string[],
-    files: Express.Multer.File[]
+    dto: UpdateReviewInput,
+    images: Express.Multer.File[] = [],
+    flags?: ImageFlags,
   ) {
-    const review = await this.reviewModel.findById(id);
-    if (!review) throw new NotFoundException("Review not found");
+    const restObj = new Types.ObjectId(restaurantId);
+    const filter: FilterQuery<ReviewDocument> = {
+      _id: new Types.ObjectId(id),
+      restaurantId: restObj,
+    };
 
-    let uploadedUrls: string[] = [];
-    if (files && files.length > 0) {
-      const upload = await this.uploadService.uploadMultipleToGCS(
-        files,
-        `review/${review.restaurantId}/${review.userId}`
-      );
-      uploadedUrls = upload.paths;
+    const current = await this.reviewModel.findOne(filter).lean();
+    if (!current) throw new NotFoundException('Review not found');
+
+    const update: UpdateQuery<ReviewDocument> = { $set: {} as any };
+
+    if (dto.content !== undefined) {
+      (update.$set as any).content = dto.content;
+    }
+    if (dto.rating !== undefined) {
+      (update.$set as any).rating = dto.rating;
     }
 
-    const newImages = [...(keepImages || []), ...uploadedUrls];
+    const flagsSafe: ImageFlags = {
+      imagesMode: flags?.imagesMode ?? 'append',
+      removeAllImages: !!flags?.removeAllImages,
+      imagesRemovePaths: Array.isArray(flags?.imagesRemovePaths)
+        ? flags.imagesRemovePaths
+        : [],
+    };
 
-    review.content = content;
-    review.rating = rating;
-    review.images = newImages;
-    await review.save();
+    let nextImages = Array.isArray(current.images) ? [...current.images] : [];
 
-    // 🔄 Cập nhật lại thống kê rating
-    await this.updateRestaurantRating(review.restaurantId);
+    // remove / removeAll
+    if (flagsSafe.imagesMode === 'remove' || flagsSafe.removeAllImages) {
+      if (flagsSafe.removeAllImages) {
+        nextImages = [];
+      } else if (flagsSafe.imagesRemovePaths?.length) {
+        const rm = new Set(flagsSafe.imagesRemovePaths);
+        nextImages = nextImages.filter((p) => !rm.has(p));
+      }
+    }
 
-    return review;
+    // replace
+    if (flagsSafe.imagesMode === 'replace') {
+      if (images.length) {
+        const up = await this.uploadService.uploadMultipleToGCS(
+          images,
+          `restaurants/${restaurantId}/reviews/${current.userId}`,
+        );
+        nextImages = up.paths ?? [];
+      } else if ((dto as any).images && Array.isArray((dto as any).images)) {
+        nextImages = (dto as any).images as string[];
+      } else {
+        nextImages = [];
+      }
+    }
+
+    // append
+    if (flagsSafe.imagesMode === 'append') {
+      if (images.length) {
+        const up = await this.uploadService.uploadMultipleToGCS(
+          images,
+          `restaurants/${restaurantId}/reviews/${current.userId}`,
+        );
+        nextImages = [
+          ...nextImages,
+          ...((up.paths ?? []) as string[]),
+        ];
+      }
+
+      if ((dto as any).images && Array.isArray((dto as any).images)) {
+        nextImages = [
+          ...nextImages,
+          ...((dto as any).images as string[]),
+        ];
+      }
+
+      if (flagsSafe.imagesRemovePaths?.length) {
+        const rm = new Set(flagsSafe.imagesRemovePaths);
+        nextImages = nextImages.filter((p) => !rm.has(p));
+      }
+
+      // uniq
+      nextImages = [...new Set(nextImages)];
+    }
+
+    const changed =
+      nextImages.length !== (current.images?.length ?? 0) ||
+      nextImages.some((p, i) => p !== current.images?.[i]);
+
+    if (changed) {
+      (update.$set as any).images = nextImages;
+    }
+
+    (update.$set as any).updatedAt = new Date();
+
+    const updated = await this.reviewModel
+      .findOneAndUpdate(filter, update, { new: true, lean: true })
+      .exec();
+    if (!updated) throw new NotFoundException('Review not found');
+
+    await this.updateRestaurantRating(restaurantId);
+
+    return updated;
   }
 
-  /** 🗑️ Xoá review */
-  async deleteReview(id: string) {
-    const review = await this.reviewModel.findByIdAndDelete(id);
-    if (!review) throw new NotFoundException("Review not found");
+  // ===== DELETE =====
+  async deleteReview(restaurantId: string, id: string) {
+    const restObj = new Types.ObjectId(restaurantId);
+    const review = await this.reviewModel.findOneAndDelete({
+      _id: new Types.ObjectId(id),
+      restaurantId: restObj,
+    });
+    if (!review) throw new NotFoundException('Review not found');
 
-    // 🔄 Cập nhật lại thống kê rating
-    await this.updateRestaurantRating(review.restaurantId);
+    await this.updateRestaurantRating(restaurantId);
 
-    return { message: "Review deleted successfully" };
+    return { message: 'Review deleted successfully' };
   }
 
-  /** 📋 Lấy danh sách review theo quán (mới nhất trước) */
+  // ===== LIST BY RESTAURANT =====
   async getReviewsByRestaurant(restaurantId: string) {
-    return this.reviewModel.find({ restaurantId }).sort({ createdAt: -1 });
+    const restObj = new Types.ObjectId(restaurantId);
+    return this.reviewModel
+      .find({ restaurantId: restObj })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
   }
 }

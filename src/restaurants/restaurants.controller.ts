@@ -30,6 +30,7 @@ import {
 } from './dto/query-restaurants.dto';
 import { Types } from 'mongoose';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
+import { NearbyRestaurantsQueryDto } from './dto/nearby-restaurants.dto';
 
 type AuthUser = { sub?: string; id?: string; roles?: string[] };
 
@@ -78,59 +79,59 @@ export class OwnerRestaurantsController {
       { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
     ),
   )
-@Patch(':id')
-@UseInterceptors(
-  FileFieldsInterceptor(
-    [
-      { name: 'logo', maxCount: 1 },
-      { name: 'cover', maxCount: 1 },
-      { name: 'gallery', maxCount: 16 },
-    ],
-    { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
-  ),
-)
-async updateById(
-  @Param('id') id: string,
-  @Body() body: UpdateRestaurantDto & Record<string, any>,
-  @CurrentUser() currentUser: any,
-  @UploadedFiles()
-  files?: {
-    logo?: Express.Multer.File[];
-    cover?: Express.Multer.File[];
-    gallery?: Express.Multer.File[];
-  },
-) {
-  if (!id) throw new BadRequestException('Missing restaurant id');
+  @Patch(':id')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'logo', maxCount: 1 },
+        { name: 'cover', maxCount: 1 },
+        { name: 'gallery', maxCount: 16 },
+      ],
+      { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
+    ),
+  )
+  async updateById(
+    @Param('id') id: string,
+    @Body() body: UpdateRestaurantDto & Record<string, any>,
+    @CurrentUser() currentUser: any,
+    @UploadedFiles()
+    files?: {
+      logo?: Express.Multer.File[];
+      cover?: Express.Multer.File[];
+      gallery?: Express.Multer.File[];
+    },
+  ) {
+    if (!id) throw new BadRequestException('Missing restaurant id');
 
-  const parseBool = (v: any) =>
-    typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
+    const parseBool = (v: any) =>
+      typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
 
-  const parseJsonArray = (v: any): string[] => {
-    if (!v) return [];
-    try {
-      if (typeof v === 'string') return JSON.parse(v);
-      if (Array.isArray(v)) return v;
-    } catch (_) {}
-    return [];
-  };
+    const parseJsonArray = (v: any): string[] => {
+      if (!v) return [];
+      try {
+        if (typeof v === 'string') return JSON.parse(v);
+        if (Array.isArray(v)) return v;
+      } catch (_) {}
+      return [];
+    };
 
-  const options = {
-    removeLogo: parseBool(body.removeLogo),
-    removeCover: parseBool(body.removeCover),
-    galleryMode:
-      (body.galleryMode as 'append' | 'replace' | 'remove') ?? 'append',
-    galleryRemovePaths: parseJsonArray(body.galleryRemovePaths),
-    removeAllGallery: parseBool(body.removeAllGallery),
-  };
+    const options = {
+      removeLogo: parseBool(body.removeLogo),
+      removeCover: parseBool(body.removeCover),
+      galleryMode:
+        (body.galleryMode as 'append' | 'replace' | 'remove') ?? 'append',
+      galleryRemovePaths: parseJsonArray(body.galleryRemovePaths),
+      removeAllGallery: parseBool(body.removeAllGallery),
+    };
 
-  return this.restaurantsService.updateByIdWithUploads(
-    id,
-    body,
-    currentUser._id,
-    files,
-    options,
-  );
-}
+    return this.restaurantsService.updateByIdWithUploads(
+      id,
+      body,
+      currentUser._id,
+      files,
+      options,
+    );
+  }
 
   @Get()
   async list(@Query() query: QueryRestaurantsDto) {
@@ -138,12 +139,12 @@ async updateById(
   }
 
   // GET /restaurants/:idOrSlug
-  @Get(':idOrSlug')
+  @Get('detail/:idOrSlug')
   async detail(@Param('idOrSlug') idOrSlug: string) {
     return this.restaurantsService.findDetail(idOrSlug);
   }
 
-  @Get('owners/:ownerId/restaurants')
+  @Get(':ownerId/restaurants')
   async listByOwner(
     @Param('ownerId') ownerId: string,
     @Query() query: OwnerRestaurantsQueryDto,
@@ -152,5 +153,10 @@ async updateById(
       throw new Error('Invalid ownerId');
     }
     return this.restaurantsService.findByOwnerId(ownerId, query);
+  }
+
+  @Get('nearby')
+  async getNearby(@Query() query: NearbyRestaurantsQueryDto) {
+    return this.restaurantsService.findNearby(query);
   }
 }

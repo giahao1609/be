@@ -14,6 +14,7 @@ import {
   OwnerRestaurantsQueryDto,
   QueryRestaurantsDto,
 } from './dto/query-restaurants.dto';
+import { NearbyRestaurantsQueryDto } from './dto/nearby-restaurants.dto';
 
 type UploadFlags = {
   removeLogo?: boolean;
@@ -435,7 +436,6 @@ export class RestaurantsService {
     }
     return nextSlug;
   }
-
 
   // private async updateOneWithUploads(
   //   filter: FilterQuery<RestaurantDocument>,
@@ -918,276 +918,268 @@ export class RestaurantsService {
   //   }
   // }
 
-async updateByIdWithUploads(
-  id: string,
-  dto: UpdateRestaurantDto & Record<string, any>,
-  requesterId?: string,
-  files?: {
-    logo?: Express.Multer.File[];
-    cover?: Express.Multer.File[];
-    gallery?: Express.Multer.File[];
-  },
-  flags?: UploadFlags,
-) {
-  return this.updateOneWithUploads(
-    { _id: new Types.ObjectId(id) },
-    dto,
-    requesterId,
-    files,
-    flags,
-  );
-}
+  async updateByIdWithUploads(
+    id: string,
+    dto: UpdateRestaurantDto & Record<string, any>,
+    requesterId?: string,
+    files?: {
+      logo?: Express.Multer.File[];
+      cover?: Express.Multer.File[];
+      gallery?: Express.Multer.File[];
+    },
+    flags?: UploadFlags,
+  ) {
+    return this.updateOneWithUploads(
+      { _id: new Types.ObjectId(id) },
+      dto,
+      requesterId,
+      files,
+      flags,
+    );
+  }
 
   private async updateOneWithUploads(
-  filter: FilterQuery<RestaurantDocument>,
-  dto: UpdateRestaurantDto & Record<string, any>,
-  requesterId?: string,
-  files?: {
-    logo?: Express.Multer.File[];
-    cover?: Express.Multer.File[];
-    gallery?: Express.Multer.File[];
-  },
-  flags?: UploadFlags,
-) {
-  const current = await this.restaurantModel.findOne(filter).lean();
-  if (!current) throw new NotFoundException('Restaurant not found');
-
-  // parse JSON, chuẩn hoá arrays, openingHours,...
-  const data = this.normalizeUpdateDto(dto);
-
-  const update: UpdateQuery<RestaurantDocument> = { $set: {} as any };
-  const $unset: Record<string, ''> = {};
-
-  // ===== slug =====
-  if (data.slug) {
-    const baseSlug = this.slugify(String(data.slug));
-    const nextSlug = await this.ensureUniqueSlugOnUpdate(
-      String(current._id),
-      baseSlug,
-    );
-    (update.$set as any).slug = nextSlug;
-  }
-
-  // ===== simple fields (set trực tiếp nếu client truyền) =====
-  const simpleFields: Array<keyof UpdateRestaurantDto> = [
-    'name',
-    'shortName',
-    'registrationNumber',
-    'taxCode',
-    'phone',
-    'website',
-    'email',
-    'cuisine',
-    'priceRange',
-    'rating',
-    'amenities',
-    'openingHours',
-    'metaTitle',
-    'metaDescription',
-    'keywords',
-    'tags',
-    'searchTerms',
-    'extra',
-    'isActive',
-  ];
-
-  for (const f of simpleFields) {
-    if (Object.prototype.hasOwnProperty.call(data, f)) {
-      (update.$set as any)[f] = (data as any)[f];
-    }
-  }
-
-  // ===== address & location =====
-  if (data.location?.type && data.location.type !== 'Point') {
-    throw new BadRequestException('location.type must be "Point"');
-  }
-  if (
-    data.address?.locationType &&
-    data.address.locationType !== 'Point'
+    filter: FilterQuery<RestaurantDocument>,
+    dto: UpdateRestaurantDto & Record<string, any>,
+    requesterId?: string,
+    files?: {
+      logo?: Express.Multer.File[];
+      cover?: Express.Multer.File[];
+      gallery?: Express.Multer.File[];
+    },
+    flags?: UploadFlags,
   ) {
-    throw new BadRequestException('address.locationType must be "Point"');
-  }
+    const current = await this.restaurantModel.findOne(filter).lean();
+    if (!current) throw new NotFoundException('Restaurant not found');
 
-  // Tính nextAddress / nextLocation từ current + data
-  const hasAddressInDto = Object.prototype.hasOwnProperty.call(
-    data,
-    'address',
-  );
-  const hasLocationInDto = Object.prototype.hasOwnProperty.call(
-    data,
-    'location',
-  );
+    // parse JSON, chuẩn hoá arrays, openingHours,...
+    const data = this.normalizeUpdateDto(dto);
 
-  const nextAddress = hasAddressInDto ? data.address : current.address;
-  let nextLocation = hasLocationInDto ? data.location : current.location;
+    const update: UpdateQuery<RestaurantDocument> = { $set: {} as any };
+    const $unset: Record<string, ''> = {};
 
-  const addrCoords = nextAddress?.coordinates;
-  const locCoords = nextLocation?.coordinates;
-
-  if (Array.isArray(addrCoords) && addrCoords.length >= 2) {
-    if (!locCoords || !locCoords.length) {
-      nextLocation = {
-        ...(nextLocation ?? {}),
-        type: 'Point',
-        coordinates: addrCoords,
-      };
-    }
-  }
-
-  if (hasAddressInDto) {
-    (update.$set as any).address = nextAddress;
-  }
-  if (hasLocationInDto || nextLocation !== current.location) {
-    (update.$set as any).location = nextLocation;
-  }
-
-  // ===== flags gallery/logo/cover =====
-  const flagsSafe: UploadFlags = {
-    removeLogo: !!flags?.removeLogo,
-    removeCover: !!flags?.removeCover,
-    galleryMode: flags?.galleryMode ?? 'append',
-    galleryRemovePaths: Array.isArray(flags?.galleryRemovePaths)
-      ? flags.galleryRemovePaths
-      : [],
-    removeAllGallery: !!flags?.removeAllGallery,
-  };
-
-  // --- logo ---
-  if (files?.logo?.length) {
-    const up = await this.uploadService.uploadMultipleToGCS(
-      files.logo,
-      `restaurants/${current.slug}/logo`,
-    );
-    (update.$set as any).logoUrl = up.paths?.[0] ?? '';
-  } else if (flagsSafe.removeLogo) {
-    $unset['logoUrl'] = '';
-  } else if (Object.prototype.hasOwnProperty.call(data, 'logoUrl')) {
-    (update.$set as any).logoUrl = data.logoUrl ?? '';
-  }
-
-  // --- cover ---
-  if (files?.cover?.length) {
-    const up = await this.uploadService.uploadMultipleToGCS(
-      files.cover,
-      `restaurants/${current.slug}/cover`,
-    );
-    (update.$set as any).coverImageUrl = up.paths?.[0] ?? '';
-  } else if (flagsSafe.removeCover) {
-    $unset['coverImageUrl'] = '';
-  } else if (
-    Object.prototype.hasOwnProperty.call(data, 'coverImageUrl')
-  ) {
-    (update.$set as any).coverImageUrl = data.coverImageUrl ?? '';
-  }
-
-  // --- gallery ---
-  const currentGallery: string[] = Array.isArray(current.gallery)
-    ? current.gallery
-    : [];
-  let nextGallery = [...currentGallery];
-
-  // remove / removeAll
-  if (flagsSafe.galleryMode === 'remove' || flagsSafe.removeAllGallery) {
-    if (flagsSafe.removeAllGallery) nextGallery = [];
-    else if (flagsSafe.galleryRemovePaths?.length) {
-      const removeSet = new Set(flagsSafe.galleryRemovePaths);
-      nextGallery = nextGallery.filter((p) => !removeSet.has(p));
-    }
-  }
-
-  // replace
-  if (flagsSafe.galleryMode === 'replace') {
-    if (files?.gallery?.length) {
-      const up = await this.uploadService.uploadMultipleToGCS(
-        files.gallery,
-        `restaurants/${current.slug}/gallery`,
+    // ===== slug =====
+    if (data.slug) {
+      const baseSlug = this.slugify(String(data.slug));
+      const nextSlug = await this.ensureUniqueSlugOnUpdate(
+        String(current._id),
+        baseSlug,
       );
-      nextGallery = up.paths ?? [];
-    } else if (Array.isArray(data.gallery)) {
-      nextGallery = this.uniqStrings(data.gallery);
+      (update.$set as any).slug = nextSlug;
     }
-  }
 
-  // append
-  if (flagsSafe.galleryMode === 'append') {
-    if (files?.gallery?.length) {
-      const up = await this.uploadService.uploadMultipleToGCS(
-        files.gallery,
-        `restaurants/${current.slug}/gallery`,
-      );
-      nextGallery = this.uniqStrings([
-        ...nextGallery,
-        ...(up.paths ?? []),
-      ]);
+    // ===== simple fields (set trực tiếp nếu client truyền) =====
+    const simpleFields: Array<keyof UpdateRestaurantDto> = [
+      'name',
+      'shortName',
+      'registrationNumber',
+      'taxCode',
+      'phone',
+      'website',
+      'email',
+      'cuisine',
+      'priceRange',
+      'rating',
+      'amenities',
+      'openingHours',
+      'metaTitle',
+      'metaDescription',
+      'keywords',
+      'tags',
+      'searchTerms',
+      'extra',
+      'isActive',
+    ];
+
+    for (const f of simpleFields) {
+      if (Object.prototype.hasOwnProperty.call(data, f)) {
+        (update.$set as any)[f] = (data as any)[f];
+      }
     }
-    if (Array.isArray(data.gallery)) {
-      nextGallery = this.uniqStrings([...nextGallery, ...data.gallery]);
+
+    // ===== address & location =====
+    if (data.location?.type && data.location.type !== 'Point') {
+      throw new BadRequestException('location.type must be "Point"');
     }
-    if (flagsSafe.galleryRemovePaths?.length) {
-      const removeSet = new Set(flagsSafe.galleryRemovePaths);
-      nextGallery = nextGallery.filter((p) => !removeSet.has(p));
+    if (data.address?.locationType && data.address.locationType !== 'Point') {
+      throw new BadRequestException('address.locationType must be "Point"');
     }
-  }
 
-  const galleryChanged =
-    nextGallery.length !== currentGallery.length ||
-    nextGallery.some((p, i) => p !== currentGallery[i]);
+    // Tính nextAddress / nextLocation từ current + data
+    const hasAddressInDto = Object.prototype.hasOwnProperty.call(
+      data,
+      'address',
+    );
+    const hasLocationInDto = Object.prototype.hasOwnProperty.call(
+      data,
+      'location',
+    );
 
-  if (galleryChanged) {
-    (update.$set as any).gallery = nextGallery;
-  }
+    const nextAddress = hasAddressInDto ? data.address : current.address;
+    let nextLocation = hasLocationInDto ? data.location : current.location;
 
-  // ===== searchTerms auto nếu client không truyền =====
-  const searchTermsProvided = Object.prototype.hasOwnProperty.call(
-    data,
-    'searchTerms',
-  );
+    const addrCoords = nextAddress?.coordinates;
+    const locCoords = nextLocation?.coordinates;
 
-  if (!searchTermsProvided) {
-    const temp = {
-      name:
-        (update.$set as any).name !== undefined
-          ? (update.$set as any).name
-          : current.name,
-      shortName:
-        (update.$set as any).shortName !== undefined
-          ? (update.$set as any).shortName
-          : current.shortName,
-      keywords:
-        (update.$set as any).keywords !== undefined
-          ? (update.$set as any).keywords
-          : current.keywords,
-      tags:
-        (update.$set as any).tags !== undefined
-          ? (update.$set as any).tags
-          : current.tags,
-      address: hasAddressInDto ? nextAddress : current.address,
+    if (Array.isArray(addrCoords) && addrCoords.length >= 2) {
+      if (!locCoords || !locCoords.length) {
+        nextLocation = {
+          ...(nextLocation ?? {}),
+          type: 'Point',
+          coordinates: addrCoords,
+        };
+      }
+    }
+
+    if (hasAddressInDto) {
+      (update.$set as any).address = nextAddress;
+    }
+    if (hasLocationInDto || nextLocation !== current.location) {
+      (update.$set as any).location = nextLocation;
+    }
+
+    // ===== flags gallery/logo/cover =====
+    const flagsSafe: UploadFlags = {
+      removeLogo: !!flags?.removeLogo,
+      removeCover: !!flags?.removeCover,
+      galleryMode: flags?.galleryMode ?? 'append',
+      galleryRemovePaths: Array.isArray(flags?.galleryRemovePaths)
+        ? flags.galleryRemovePaths
+        : [],
+      removeAllGallery: !!flags?.removeAllGallery,
     };
-    (update.$set as any).searchTerms = this.buildSearchTerms(temp);
-  }
 
-  // ===== meta =====
-  (update.$set as any).updatedAt = new Date();
-  if (requesterId) {
-    (update.$set as any)['extra.updatedBy'] = requesterId;
-    (update.$set as any)['extra.updatedReason'] = 'owner_update';
-  }
-  if (Object.keys($unset).length > 0) (update as any).$unset = $unset;
-
-  try {
-    const updated = await this.restaurantModel
-      .findOneAndUpdate(filter, update, { new: true, lean: true })
-      .exec();
-    if (!updated) throw new NotFoundException('Restaurant not found');
-
-    return await this.expandSignedUrls(updated);
-  } catch (err: any) {
-    if (err?.code === 11000 && err?.keyPattern?.slug) {
-      throw new ConflictException('Slug already exists');
+    // --- logo ---
+    if (files?.logo?.length) {
+      const up = await this.uploadService.uploadMultipleToGCS(
+        files.logo,
+        `restaurants/${current.slug}/logo`,
+      );
+      (update.$set as any).logoUrl = up.paths?.[0] ?? '';
+    } else if (flagsSafe.removeLogo) {
+      $unset['logoUrl'] = '';
+    } else if (Object.prototype.hasOwnProperty.call(data, 'logoUrl')) {
+      (update.$set as any).logoUrl = data.logoUrl ?? '';
     }
-    throw err;
+
+    // --- cover ---
+    if (files?.cover?.length) {
+      const up = await this.uploadService.uploadMultipleToGCS(
+        files.cover,
+        `restaurants/${current.slug}/cover`,
+      );
+      (update.$set as any).coverImageUrl = up.paths?.[0] ?? '';
+    } else if (flagsSafe.removeCover) {
+      $unset['coverImageUrl'] = '';
+    } else if (Object.prototype.hasOwnProperty.call(data, 'coverImageUrl')) {
+      (update.$set as any).coverImageUrl = data.coverImageUrl ?? '';
+    }
+
+    // --- gallery ---
+    const currentGallery: string[] = Array.isArray(current.gallery)
+      ? current.gallery
+      : [];
+    let nextGallery = [...currentGallery];
+
+    // remove / removeAll
+    if (flagsSafe.galleryMode === 'remove' || flagsSafe.removeAllGallery) {
+      if (flagsSafe.removeAllGallery) nextGallery = [];
+      else if (flagsSafe.galleryRemovePaths?.length) {
+        const removeSet = new Set(flagsSafe.galleryRemovePaths);
+        nextGallery = nextGallery.filter((p) => !removeSet.has(p));
+      }
+    }
+
+    // replace
+    if (flagsSafe.galleryMode === 'replace') {
+      if (files?.gallery?.length) {
+        const up = await this.uploadService.uploadMultipleToGCS(
+          files.gallery,
+          `restaurants/${current.slug}/gallery`,
+        );
+        nextGallery = up.paths ?? [];
+      } else if (Array.isArray(data.gallery)) {
+        nextGallery = this.uniqStrings(data.gallery);
+      }
+    }
+
+    // append
+    if (flagsSafe.galleryMode === 'append') {
+      if (files?.gallery?.length) {
+        const up = await this.uploadService.uploadMultipleToGCS(
+          files.gallery,
+          `restaurants/${current.slug}/gallery`,
+        );
+        nextGallery = this.uniqStrings([...nextGallery, ...(up.paths ?? [])]);
+      }
+      if (Array.isArray(data.gallery)) {
+        nextGallery = this.uniqStrings([...nextGallery, ...data.gallery]);
+      }
+      if (flagsSafe.galleryRemovePaths?.length) {
+        const removeSet = new Set(flagsSafe.galleryRemovePaths);
+        nextGallery = nextGallery.filter((p) => !removeSet.has(p));
+      }
+    }
+
+    const galleryChanged =
+      nextGallery.length !== currentGallery.length ||
+      nextGallery.some((p, i) => p !== currentGallery[i]);
+
+    if (galleryChanged) {
+      (update.$set as any).gallery = nextGallery;
+    }
+
+    // ===== searchTerms auto nếu client không truyền =====
+    const searchTermsProvided = Object.prototype.hasOwnProperty.call(
+      data,
+      'searchTerms',
+    );
+
+    if (!searchTermsProvided) {
+      const temp = {
+        name:
+          (update.$set as any).name !== undefined
+            ? (update.$set as any).name
+            : current.name,
+        shortName:
+          (update.$set as any).shortName !== undefined
+            ? (update.$set as any).shortName
+            : current.shortName,
+        keywords:
+          (update.$set as any).keywords !== undefined
+            ? (update.$set as any).keywords
+            : current.keywords,
+        tags:
+          (update.$set as any).tags !== undefined
+            ? (update.$set as any).tags
+            : current.tags,
+        address: hasAddressInDto ? nextAddress : current.address,
+      };
+      (update.$set as any).searchTerms = this.buildSearchTerms(temp);
+    }
+
+    // ===== meta =====
+    (update.$set as any).updatedAt = new Date();
+    if (requesterId) {
+      (update.$set as any)['extra.updatedBy'] = requesterId;
+      (update.$set as any)['extra.updatedReason'] = 'owner_update';
+    }
+    if (Object.keys($unset).length > 0) (update as any).$unset = $unset;
+
+    try {
+      const updated = await this.restaurantModel
+        .findOneAndUpdate(filter, update, { new: true, lean: true })
+        .exec();
+      if (!updated) throw new NotFoundException('Restaurant not found');
+
+      return await this.expandSignedUrls(updated);
+    } catch (err: any) {
+      if (err?.code === 11000 && err?.keyPattern?.slug) {
+        throw new ConflictException('Slug already exists');
+      }
+      throw err;
+    }
   }
-}
 
   private sortMap(sort?: string) {
     switch (sort) {
@@ -1217,149 +1209,147 @@ async updateByIdWithUploads(
       .filter(Boolean);
   }
   // ===== LIST =====
-// ===== LIST =====
-async findMany(q: QueryRestaurantsDto) {
-  const page = Math.max(1, Number(q.page ?? 1));
-  const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
-  const skip = (page - 1) * limit;
+  // ===== LIST =====
+  async findMany(q: QueryRestaurantsDto) {
+    const page = Math.max(1, Number(q.page ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
+    const skip = (page - 1) * limit;
 
-  const tagList = this.parseCsv(q.tags);
-  const cuisineList = this.parseCsv(q.cuisine);
+    const tagList = this.parseCsv(q.tags);
+    const cuisineList = this.parseCsv(q.cuisine);
 
-  const baseFilter: FilterQuery<RestaurantDocument> = {};
+    const baseFilter: FilterQuery<RestaurantDocument> = {};
 
-  // isActive filter
-  if (q.isActive === 'true') baseFilter.isActive = true;
-  if (q.isActive === 'false') baseFilter.isActive = false;
+    // isActive filter
+    if (q.isActive === 'true') baseFilter.isActive = true;
+    if (q.isActive === 'false') baseFilter.isActive = false;
 
-  // owner / category
-  if (q.ownerId) baseFilter.ownerId = new Types.ObjectId(q.ownerId);
-  if (q.categoryId) baseFilter.categoryId = new Types.ObjectId(q.categoryId);
+    // owner / category
+    if (q.ownerId) baseFilter.ownerId = new Types.ObjectId(q.ownerId);
+    if (q.categoryId) baseFilter.categoryId = new Types.ObjectId(q.categoryId);
 
-  // address filters
-  if (q.country) baseFilter['address.country'] = q.country.toUpperCase();
-  if (q.city) baseFilter['address.city'] = q.city;
-  if (q.district) baseFilter['address.district'] = q.district;
-  if (q.ward) baseFilter['address.ward'] = q.ward;
+    // address filters
+    if (q.country) baseFilter['address.country'] = q.country.toUpperCase();
+    if (q.city) baseFilter['address.city'] = q.city;
+    if (q.district) baseFilter['address.district'] = q.district;
+    if (q.ward) baseFilter['address.ward'] = q.ward;
 
-  // tags / cuisine
-  if (tagList.length) baseFilter.tags = { $all: tagList };
-  if (cuisineList.length) baseFilter.cuisine = { $all: cuisineList };
+    // tags / cuisine
+    if (tagList.length) baseFilter.tags = { $all: tagList };
+    if (cuisineList.length) baseFilter.cuisine = { $all: cuisineList };
 
-  // toạ độ (ép Number cho chắc)
-  const lat = q.lat !== undefined && q.lat !== null ? Number(q.lat) : undefined;
-  const lng = q.lng !== undefined && q.lng !== null ? Number(q.lng) : undefined;
-  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+    // toạ độ (ép Number cho chắc)
+    const lat =
+      q.lat !== undefined && q.lat !== null ? Number(q.lat) : undefined;
+    const lng =
+      q.lng !== undefined && q.lng !== null ? Number(q.lng) : undefined;
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
 
-  const wantDistanceSort = q.sort === 'distance' && hasCoords;
+    const wantDistanceSort = q.sort === 'distance' && hasCoords;
 
-  const textSearch = q.q && q.q.trim() ? q.q.trim() : undefined;
+    const textSearch = q.q && q.q.trim() ? q.q.trim() : undefined;
 
-  // Pipeline
-  const pipeline: any[] = [];
+    // Pipeline
+    const pipeline: any[] = [];
 
-  // 1) GeoNear (nếu có toạ độ)
-  if (hasCoords) {
+    // 1) GeoNear (nếu có toạ độ)
+    if (hasCoords) {
+      pipeline.push({
+        $geoNear: {
+          near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
+          distanceField: 'distance',
+          spherical: true,
+          ...(q.radius ? { maxDistance: Number(q.radius) } : {}),
+          query: baseFilter,
+        },
+      });
+    } else {
+      // 2) Không có geoNear → dùng $match bình thường
+      if (Object.keys(baseFilter).length) {
+        pipeline.push({ $match: baseFilter });
+      }
+    }
+
+    // 3) Text search
+    if (textSearch) {
+      pipeline.push({
+        $match: { $text: { $search: textSearch } },
+      });
+
+      pipeline.push({
+        $addFields: { textScore: { $meta: 'textScore' } },
+      });
+    }
+
+    // 4) Sort
+    const sortObj = this.sortMap(q.sort) || {};
+    if (wantDistanceSort) {
+      pipeline.push({ $sort: { distance: 1 } });
+    } else if (textSearch) {
+      // sort theo textScore + custom sort nếu có
+      const textSort: any = { textScore: -1 };
+      for (const [k, v] of Object.entries(sortObj)) {
+        textSort[k] = v;
+      }
+      pipeline.push({ $sort: textSort });
+    } else if (Object.keys(sortObj).length) {
+      pipeline.push({ $sort: sortObj });
+    } else {
+      // fallback sort nếu sortMap không trả ra gì
+      pipeline.push({ $sort: { createdAt: -1 } });
+    }
+
+    // 5) Paging
+    pipeline.push({ $skip: skip }, { $limit: limit });
+
+    // 6) Projection (KHÔNG để trống nữa)
     pipeline.push({
-      $geoNear: {
-        near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
-        distanceField: 'distance',
-        spherical: true,
-        ...(q.radius ? { maxDistance: Number(q.radius) } : {}),
-        query: baseFilter,
+      $project: {
+        _id: 1,
+        ownerId: 1,
+        name: 1,
+        slug: 1,
+        description: 1,
+        tags: 1,
+        cuisine: 1,
+        address: 1,
+        isActive: 1,
+        isFeatured: 1,
+        logoImage: 1,
+        coverImage: 1,
+        gallery: 1,
+        averageRating: 1,
+        totalReviews: 1,
+        distance: 1, // chỉ có nếu dùng geoNear
+        createdAt: 1,
+        updatedAt: 1,
       },
     });
-  } else {
-    // 2) Không có geoNear → dùng $match bình thường
-    if (Object.keys(baseFilter).length) {
-      pipeline.push({ $match: baseFilter });
+
+    // ===== Count total =====
+    const countFilter: any = { ...baseFilter };
+    if (textSearch) {
+      countFilter.$text = { $search: textSearch };
     }
+
+    const [items, total] = await Promise.all([
+      this.restaurantModel.aggregate(pipeline).exec(),
+      this.restaurantModel.countDocuments(countFilter).exec(),
+    ]);
+
+    // expand signed URLs
+    const withSigned = await Promise.all(
+      items.map((it) => this.expandSignedUrls(it)),
+    );
+
+    return {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      items: withSigned,
+    };
   }
-
-  // 3) Text search
-  if (textSearch) {
-    pipeline.push({
-      $match: { $text: { $search: textSearch } },
-    });
-
-    pipeline.push({
-      $addFields: { textScore: { $meta: 'textScore' } },
-    });
-  }
-
-  // 4) Sort
-  const sortObj = this.sortMap(q.sort) || {};
-  if (wantDistanceSort) {
-    pipeline.push({ $sort: { distance: 1 } });
-  } else if (textSearch) {
-    // sort theo textScore + custom sort nếu có
-    const textSort: any = { textScore: -1 };
-    for (const [k, v] of Object.entries(sortObj)) {
-      textSort[k] = v;
-    }
-    pipeline.push({ $sort: textSort });
-  } else if (Object.keys(sortObj).length) {
-    pipeline.push({ $sort: sortObj });
-  } else {
-    // fallback sort nếu sortMap không trả ra gì
-    pipeline.push({ $sort: { createdAt: -1 } });
-  }
-
-  // 5) Paging
-  pipeline.push(
-    { $skip: skip },
-    { $limit: limit },
-  );
-
-  // 6) Projection (KHÔNG để trống nữa)
-  pipeline.push({
-    $project: {
-      _id: 1,
-      ownerId: 1,
-      name: 1,
-      slug: 1,
-      description: 1,
-      tags: 1,
-      cuisine: 1,
-      address: 1,
-      isActive: 1,
-      isFeatured: 1,
-      logoImage: 1,
-      coverImage: 1,
-      gallery: 1,
-      averageRating: 1,
-      totalReviews: 1,
-      distance: 1,      // chỉ có nếu dùng geoNear
-      createdAt: 1,
-      updatedAt: 1,
-    },
-  });
-
-  // ===== Count total =====
-  const countFilter: any = { ...baseFilter };
-  if (textSearch) {
-    countFilter.$text = { $search: textSearch };
-  }
-
-  const [items, total] = await Promise.all([
-    this.restaurantModel.aggregate(pipeline).exec(),
-    this.restaurantModel.countDocuments(countFilter).exec(),
-  ]);
-
-  // expand signed URLs
-  const withSigned = await Promise.all(
-    items.map((it) => this.expandSignedUrls(it)),
-  );
-
-  return {
-    page,
-    limit,
-    total,
-    pages: Math.ceil(total / limit),
-    items: withSigned,
-  };
-}
-
 
   // ===== DETAIL =====
   async findDetail(idOrSlug: string) {
@@ -1401,6 +1391,167 @@ async findMany(q: QueryRestaurantsDto) {
       total,
       pages: Math.ceil(total / limit),
       items: withSigned,
+    };
+  }
+
+  // async expandSignedUrls(doc: any) {
+  //   if (!doc) return doc;
+  //   const signed = async (p?: string | null) =>
+  //     p ? (await this.uploadService.getSignedUrl(p)).url : null;
+
+  //   const out: any = { ...doc };
+
+  //   out.logoUrlSigned = doc.logoUrl ? await signed(doc.logoUrl) : null;
+  //   out.coverImageUrlSigned = doc.coverImageUrl
+  //     ? await signed(doc.coverImageUrl)
+  //     : null;
+
+  //   if (Array.isArray(doc.gallery) && doc.gallery.length) {
+  //     out.gallerySigned = await Promise.all(
+  //       doc.gallery.map(async (p: string) => ({
+  //         path: p,
+  //         url: await signed(p),
+  //       })),
+  //     );
+  //   } else {
+  //     out.gallerySigned = [];
+  //   }
+
+  //   return out;
+  // }
+
+  // private async expandSignedUrls(doc: any) {
+  //   if (!doc) return doc;
+  //   const signed = async (p?: string | null) =>
+  //     p ? (await this.uploadService.getSignedUrl(p)).url : null;
+
+  //   const out: any = { ...doc };
+
+  //   out.logoUrlSigned = doc.logoUrl ? await signed(doc.logoUrl) : null;
+  //   out.coverImageUrlSigned = doc.coverImageUrl
+  //     ? await signed(doc.coverImageUrl)
+  //     : null;
+
+  //   if (Array.isArray(doc.gallery) && doc.gallery.length) {
+  //     out.gallerySigned = await Promise.all(
+  //       doc.gallery.map(async (p: string) => ({
+  //         path: p,
+  //         url: await signed(p),
+  //       })),
+  //     );
+  //   } else {
+  //     out.gallerySigned = [];
+  //   }
+
+  //   return out;
+  // }
+
+  // private async expandSignedUrls(doc: any) {
+  //   if (!doc) return doc;
+  //   const signed = async (p?: string | null) =>
+  //     p ? (await this.uploadService.getSignedUrl(p)).url : null;
+
+  //   const out: any = { ...doc };
+
+  //   out.logoUrlSigned = doc.logoUrl ? await signed(doc.logoUrl) : null;
+  //   out.coverImageUrlSigned = doc.coverImageUrl
+  //     ? await signed(doc.coverImageUrl)
+  //     : null;
+
+  //   if (Array.isArray(doc.gallery) && doc.gallery.length) {
+  //     out.gallerySigned = await Promise.all(
+  //       doc.gallery.map(async (p: string) => ({
+  //         path: p,
+  //         url: await signed(p),
+  //       })),
+  //     );
+  //   } else {
+  //     out.gallerySigned = [];
+  //   }
+
+  //   return out;
+  // }
+
+  // ====== TÌM GẦN NHẤT + TÍNH KHOẢNG CÁCH ======
+  async findNearby(q: NearbyRestaurantsQueryDto) {
+    const lat = q.lat;
+    const lng = q.lng;
+    const maxDistance = q.maxDistanceMeters ?? 5000; // 5km default
+    const limit = q.limit ?? 20;
+
+    const pipeline: any[] = [
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [lng, lat] }, // [lng, lat]
+          key: 'location', // ✅ trỏ đúng field có index 2dsphere
+          distanceField: 'distanceMeters',
+          spherical: true,
+          maxDistance,
+          query: { isActive: true },
+        },
+      },
+
+      // thêm field distanceKm, làm tròn 2 số lẻ
+      {
+        $addFields: {
+          distanceKm: {
+            $round: [{ $divide: ['$distanceMeters', 1000] }, 2],
+          },
+        },
+      },
+      {
+        $limit: limit,
+      },
+      {
+        $project: {
+          ownerId: 1,
+          categoryId: 1,
+          name: 1,
+          slug: 1,
+          logoUrl: 1,
+          coverImageUrl: 1,
+          gallery: 1,
+          address: 1,
+          location: 1,
+          cuisine: 1,
+          priceRange: 1,
+          rating: 1,
+          amenities: 1,
+          openingHours: 1,
+          tags: 1,
+          searchTerms: 1,
+          isActive: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          distanceMeters: 1,
+          distanceKm: 1,
+        },
+      },
+    ];
+
+    const docs = await this.restaurantModel.aggregate(pipeline).exec();
+
+    const withSigned = await Promise.all(
+      docs.map((d) => this.expandSignedUrls(d)),
+    );
+
+    // chuẩn hoá thêm field cho FE xài map/list cho tiện
+    const items = withSigned.map((r) => ({
+      ...r,
+      coordinates: {
+        lat: r.location?.coordinates?.[1] ?? null,
+        lng: r.location?.coordinates?.[0] ?? null,
+      },
+      distanceText:
+        r.distanceKm != null ? `${r.distanceKm.toFixed(2)} km` : null,
+    }));
+
+    return {
+      center: { lat, lng },
+      maxDistanceMeters: maxDistance,
+      limit,
+      count: items.length,
+      items,
     };
   }
 }

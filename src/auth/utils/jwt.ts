@@ -13,11 +13,16 @@ function getSecret(): string {
 
 export function signJwt(payload: AuthPayload, opts?: SignOptions): string {
   const secret = getSecret();
+
+  // env trả ra string | undefined, mình cast về đúng kiểu expiresIn
+  const expiresInEnv = process.env.JWT_TTL ?? "2d"; // ví dụ "2d", "10h", "3600", ...
+
   const options: SignOptions = {
-    expiresIn: process.env.JWT_TTL ?? "2d",
+    expiresIn: expiresInEnv as SignOptions["expiresIn"],
     issuer: "resto-mvp",
     ...opts,
   };
+
   return jwt.sign(payload, secret, options);
 }
 

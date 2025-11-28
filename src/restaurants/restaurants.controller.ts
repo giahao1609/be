@@ -33,12 +33,51 @@ import { CurrentUser } from 'src/decorators/current-user.decorator';
 import { NearbyRestaurantsQueryDto } from './dto/nearby-restaurants.dto';
 
 type AuthUser = { sub?: string; id?: string; roles?: string[] };
+export type UploadFiles = {
+  logo?: Express.Multer.File[];
+  cover?: Express.Multer.File[];
+  gallery?: Express.Multer.File[];
+
+  // QR chuyển khoản ngân hàng
+  bankQrs?: Express.Multer.File[];
+
+  // QR ví điện tử
+  ewalletQrs?: Express.Multer.File[];
+};
 
 @Controller('owner/restaurants')
 @UseFilters(BusinessExceptionFilter)
 // @UseGuards(JwtAuthGuard, RolesGuard)
 export class OwnerRestaurantsController {
   constructor(private readonly restaurantsService: RestaurantsService) {}
+
+  // @Post()
+  // @UseInterceptors(
+  //   FileFieldsInterceptor(
+  //     [
+  //       { name: 'logo', maxCount: 1 },
+  //       { name: 'cover', maxCount: 1 },
+  //       { name: 'gallery', maxCount: 16 },
+  //     ],
+  //     { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
+  //   ),
+  // )
+  // async create(
+  //   @Body() body: CreateRestaurantDto,
+  //   @CurrentUser() currentUser: any,
+  //   @UploadedFiles()
+  //   files?: {
+  //     logo?: Express.Multer.File[];
+  //     cover?: Express.Multer.File[];
+  //     gallery?: Express.Multer.File[];
+  //   },
+  // ) {
+  //   return this.restaurantsService.createWithUploads(
+  //     body,
+  //     currentUser._id,
+  //     files,
+  //   );
+  // }
 
   @Post()
   @UseInterceptors(
@@ -47,26 +86,85 @@ export class OwnerRestaurantsController {
         { name: 'logo', maxCount: 1 },
         { name: 'cover', maxCount: 1 },
         { name: 'gallery', maxCount: 16 },
+
+        // 👇 thêm 2 field cho QR thanh toán
+        { name: 'bankQrs', maxCount: 20 },
+        { name: 'ewalletQrs', maxCount: 20 },
       ],
       { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
     ),
   )
   async create(
-    @Body() body: CreateRestaurantDto,
+    @Body() body: CreateRestaurantDto & Record<string, any>,
     @CurrentUser() currentUser: any,
-    @UploadedFiles()
-    files?: {
-      logo?: Express.Multer.File[];
-      cover?: Express.Multer.File[];
-      gallery?: Express.Multer.File[];
-    },
+    @UploadedFiles() files?: UploadFiles,
   ) {
+    if (!currentUser || !currentUser._id) {
+      throw new BadRequestException('Current user is required');
+    }
+
+    // CreateRestaurantDto có thể bị FE gửi JSON string cho một số field
+    // phần parse/normalize & upload ảnh/QR đã xử ở service.createWithUploads
     return this.restaurantsService.createWithUploads(
-      body,
+      body as CreateRestaurantDto,
       currentUser._id,
       files,
     );
   }
+
+  // @Patch(':id')
+  // @UseInterceptors(
+  //   FileFieldsInterceptor(
+  //     [
+  //       { name: 'logo', maxCount: 1 },
+  //       { name: 'cover', maxCount: 1 },
+  //       { name: 'gallery', maxCount: 16 },
+  //     ],
+  //     { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
+  //   ),
+  // )
+  // async updateById(
+  //   @Param('id') id: string,
+  //   @Body() body: UpdateRestaurantDto & Record<string, any>,
+  //   @CurrentUser() currentUser: any,
+  //   @UploadedFiles()
+  //   files?: {
+  //     logo?: Express.Multer.File[];
+  //     cover?: Express.Multer.File[];
+  //     gallery?: Express.Multer.File[];
+  //   },
+  // ) {
+  //   if (!id) throw new BadRequestException('Missing restaurant id');
+
+  //   const parseBool = (v: any) =>
+  //     typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
+
+  //   const parseJsonArray = (v: any): string[] => {
+  //     if (!v) return [];
+  //     try {
+  //       if (typeof v === 'string') return JSON.parse(v);
+  //       if (Array.isArray(v)) return v;
+  //     } catch (_) {}
+  //     return [];
+  //   };
+
+  //   const options = {
+  //     removeLogo: parseBool(body.removeLogo),
+  //     removeCover: parseBool(body.removeCover),
+  //     galleryMode:
+  //       (body.galleryMode as 'append' | 'replace' | 'remove') ?? 'append',
+  //     galleryRemovePaths: parseJsonArray(body.galleryRemovePaths),
+  //     removeAllGallery: parseBool(body.removeAllGallery),
+  //   };
+
+  //   return this.restaurantsService.updateByIdWithUploads(
+  //     id,
+  //     body,
+  //     currentUser._id,
+  //     files,
+  //     options,
+  //   );
+  // }
 
   @Patch(':id')
   @UseInterceptors(
@@ -75,17 +173,10 @@ export class OwnerRestaurantsController {
         { name: 'logo', maxCount: 1 },
         { name: 'cover', maxCount: 1 },
         { name: 'gallery', maxCount: 16 },
-      ],
-      { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
-    ),
-  )
-  @Patch(':id')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'logo', maxCount: 1 },
-        { name: 'cover', maxCount: 1 },
-        { name: 'gallery', maxCount: 16 },
+
+        // 👇 giống create: FE gửi QR mới khi muốn update
+        { name: 'bankQrs', maxCount: 20 },
+        { name: 'ewalletQrs', maxCount: 20 },
       ],
       { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
     ),
@@ -94,14 +185,12 @@ export class OwnerRestaurantsController {
     @Param('id') id: string,
     @Body() body: UpdateRestaurantDto & Record<string, any>,
     @CurrentUser() currentUser: any,
-    @UploadedFiles()
-    files?: {
-      logo?: Express.Multer.File[];
-      cover?: Express.Multer.File[];
-      gallery?: Express.Multer.File[];
-    },
+    @UploadedFiles() files?: UploadFiles,
   ) {
     if (!id) throw new BadRequestException('Missing restaurant id');
+    if (!currentUser || !currentUser._id) {
+      throw new BadRequestException('Current user is required');
+    }
 
     const parseBool = (v: any) =>
       typeof v === 'string' ? v.toLowerCase() === 'true' : !!v;
@@ -115,6 +204,7 @@ export class OwnerRestaurantsController {
       return [];
     };
 
+    // flags cho logo/cover/gallery
     const options = {
       removeLogo: parseBool(body.removeLogo),
       removeCover: parseBool(body.removeCover),
@@ -122,9 +212,12 @@ export class OwnerRestaurantsController {
         (body.galleryMode as 'append' | 'replace' | 'remove') ?? 'append',
       galleryRemovePaths: parseJsonArray(body.galleryRemovePaths),
       removeAllGallery: parseBool(body.removeAllGallery),
+      // QR thanh toán không cần flags riêng:
+      // - gửi QR mới -> BE upload & overwrite qrImagePath theo index
+      // - muốn remove qrImagePath -> FE gửi paymentConfig.bankTransfers[i].qrImagePath = null/"" (normalize ở service)
     };
 
-    return this.restaurantsService.updateByIdWithUploads(
+    return this.restaurantsService.updateOneWithUploads(
       id,
       body,
       currentUser._id,

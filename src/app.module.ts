@@ -18,6 +18,8 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './database.module';
 import { CategoriesModule } from './category/categories.module';
 import { OwnerMenuItemsModule } from './menu/owner-menu-items.module';
+import { OrdersModule } from './order/orders.module';
+import { BlogsModule } from './blog/blogs.module';
 
 @Module({
   imports: [
@@ -55,7 +57,9 @@ import { OwnerMenuItemsModule } from './menu/owner-menu-items.module';
     UserHistoryModule,
     AdminModule,
     CategoriesModule,
-    OwnerMenuItemsModule
+    OwnerMenuItemsModule,
+    OrdersModule,
+    BlogsModule
   ],
 })
 export class AppModule {}

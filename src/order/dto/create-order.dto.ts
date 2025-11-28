@@ -1,16 +1,18 @@
-// src/orders/dto/create-order.dto.ts
 import {
   IsArray,
-  IsInt,
-  IsMongoId,
-  IsOptional,
-  IsString,
-  Min,
+  ArrayMinSize,
   ValidateNested,
+  IsMongoId,
+  IsInt,
+  Min,
+  IsDateString,
+  IsString,
+  IsOptional,
+  Length,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class CreateOrderItemDto {
+export class CreatePreOrderItemDto {
   @IsMongoId()
   menuItemId!: string;
 
@@ -18,28 +20,39 @@ export class CreateOrderItemDto {
   @Min(1)
   quantity!: number;
 
-  // FE có thể gửi note hoặc selectedOptions sau này
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  selectedOptions?: string[];
+  @IsString()
+  @Length(0, 200)
+  note?: string;
 }
 
-export class CreateOrderDto {
+export class CreatePreOrderDto {
   @IsMongoId()
   restaurantId!: string;
 
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => CreateOrderItemDto)
-  items!: CreateOrderItemDto[];
+  @IsInt()
+  @Min(1)
+  guestCount!: number;
+
+  @IsDateString()
+  arrivalTime!: string; // ISO string
+
+  @IsString()
+  @Length(1, 100)
+  contactName!: string;
+
+  @IsString()
+  @Length(8, 20)
+  contactPhone!: string;
 
   @IsOptional()
   @IsString()
+  @Length(0, 500)
   note?: string;
 
-  // nếu muốn redirect user sau khi thanh toán
-  @IsOptional()
-  @IsString()
-  returnUrl?: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreatePreOrderItemDto)
+  items!: CreatePreOrderItemDto[];
 }

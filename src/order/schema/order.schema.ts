@@ -1,102 +1,76 @@
-// src/orders/schema/order.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import {
-  HydratedDocument,
-  Schema as MongooseSchema,
-  Types,
-} from 'mongoose';
-import { Money, MoneySchema } from 'src/menu/schema/menu.schema';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { MenuItem, Money, MoneySchema } from 'src/menu/schema/menu.schema';
+import { User } from 'src/users/schema/user.schema';
 
+export type PreOrderDocument = HydratedDocument<PreOrder>;
 
-export type OrderDocument = HydratedDocument<Order>;
-
-export type OrderStatus =
-  | 'PENDING'   // mới tạo, chưa gọi ZaloPay / hoặc đang chờ
-  | 'CREATED'   // đã tạo order bên ZaloPay, chờ user thanh toán
-  | 'PAID'      // thanh toán thành công
-  | 'FAILED'    // thanh toán thất bại
-  | 'CANCELLED' // user/owner cancel
-  | 'REFUNDED'; // đã refund
-
-export type PaymentMethod = 'ZALOPAY';
+export type PreOrderStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
 
 @Schema({ _id: false })
-class OrderItem {
-  @Prop({
-    type: MongooseSchema.Types.ObjectId,
-    required: true,
-    index: true,
-  })
+export class PreOrderItem {
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: MenuItem.name, required: true })
   menuItemId!: Types.ObjectId;
 
-  @Prop({ trim: true, required: true })
-  name!: string; // snapshot name
+  @Prop({ trim: true })
+  menuItemName?: string;
 
-  // snapshot giá tại thời điểm đặt
   @Prop({ type: MoneySchema, required: true })
   unitPrice!: Money;
 
   @Prop({ type: Number, min: 1, required: true })
   quantity!: number;
 
-  // nếu sau này anh cần variant/options thì thêm ở đây
-  @Prop({ type: [String], default: [] })
-  selectedOptions?: string[];
-
   @Prop({ type: MoneySchema, required: true })
-  lineTotal!: Money; // unitPrice.amount * quantity
+  lineTotal!: Money;
+
+  @Prop({ trim: true })
+  note?: string;
 }
-export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
+export const PreOrderItemSchema = SchemaFactory.createForClass(PreOrderItem);
 
 @Schema({ timestamps: true })
-export class Order {
-  @Prop({
-    type: MongooseSchema.Types.ObjectId,
-    index: true,
-    required: true,
-  })
+export class PreOrder {
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: User.name, index: true, required: true })
   userId!: Types.ObjectId;
 
-  @Prop({
-    type: MongooseSchema.Types.ObjectId,
-    index: true,
-    required: true,
-  })
+  @Prop({ type: MongooseSchema.Types.ObjectId, index: true, required: true })
   restaurantId!: Types.ObjectId;
 
-  @Prop({ type: [OrderItemSchema], default: [] })
-  items!: OrderItem[];
+  @Prop({ type: [PreOrderItemSchema], default: [] })
+  items!: PreOrderItem[];
 
   @Prop({ type: MoneySchema, required: true })
-  subtotal!: Money;
+  totalAmount!: Money;
 
-  @Prop({ type: MoneySchema, required: true })
-  total!: Money;
+  @Prop({ type: Number, min: 1, required: true })
+  guestCount!: number;
+
+  @Prop({ type: Date, required: true })
+  arrivalTime!: Date;
+
+  @Prop({ trim: true, required: true })
+  contactName!: string;
+
+  @Prop({ trim: true, required: true })
+  contactPhone!: string;
 
   @Prop({ trim: true })
   note?: string;
 
   @Prop({
     type: String,
-    enum: ['PENDING', 'CREATED', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED'],
+    enum: ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED'],
     default: 'PENDING',
     index: true,
   })
-  status!: OrderStatus;
+  status!: PreOrderStatus;
 
-  @Prop({
-    type: String,
-    enum: ['ZALOPAY'],
-    default: 'ZALOPAY',
-  })
-  paymentMethod!: PaymentMethod;
-
-  // lưu thông tin ZaloPay: app_trans_id, zp_trans_id, order_url...
-  @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
-  paymentMetadata?: Record<string, any>;
+  @Prop({ trim: true })
+  ownerNote?: string;
 }
 
-export const OrderSchema = SchemaFactory.createForClass(Order);
+export const PreOrderSchema = SchemaFactory.createForClass(PreOrder);
 
-OrderSchema.index({ userId: 1, createdAt: -1 });
-OrderSchema.index({ restaurantId: 1, createdAt: -1 });
+PreOrderSchema.index({ restaurantId: 1, arrivalTime: 1 });
+PreOrderSchema.index({ userId: 1, createdAt: -1 });

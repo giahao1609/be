@@ -199,8 +199,8 @@ export class PreOrderService {
   // =========================================================
   private async notifyUserPreOrderStatus(preOrder: PreOrderDocument) {
     const [user, restaurant] = await Promise.all([
-      this.userModel.findById(preOrder.userId).lean().exec(),
-      this.restaurantModel.findById(preOrder.restaurantId).lean().exec(),
+      this.userModel.findById(preOrder.userId).exec(),
+      this.restaurantModel.findById(preOrder.restaurantId).exec(),
     ]);
 
     if (!user || !user.email) {

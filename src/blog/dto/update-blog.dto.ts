@@ -7,7 +7,6 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { BlogStatus } from '../schema/blog.schema';
 
 export class UpdateBlogDto {
   @IsString()

@@ -25,13 +25,11 @@ import { QueryBlogsDto } from './dto/query-blog.dto';
 import { BusinessExceptionFilter } from 'src/filters/business-exception.filter';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { Roles } from 'src/auth/guards/roles.decorator';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
 
-@Controller('owner/blogs')
+@Controller('blogs')
 @UseFilters(BusinessExceptionFilter)
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('owner', 'admin')
 export class OwnerBlogsController {
   constructor(private readonly blogsService: BlogsService) {}
 
@@ -39,8 +37,8 @@ export class OwnerBlogsController {
   @UseInterceptors(
     FileFieldsInterceptor(
       [
-        { name: 'hero', maxCount: 1 },      // ảnh cover
-        { name: 'gallery', maxCount: 16 },  // ảnh trong bài
+        { name: 'hero', maxCount: 1 },      
+        { name: 'gallery', maxCount: 16 },  
       ],
       { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
     ),

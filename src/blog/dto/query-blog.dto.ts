@@ -1,11 +1,14 @@
 // src/blog/dto/query-blog.dto.ts
+import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString } from 'class-validator';
 
 export class QueryBlogsDto {
+  @Type(() => Number)
   @IsInt()
   @IsOptional()
   page?: number;
 
+  @Type(() => Number)
   @IsInt()
   @IsOptional()
   limit?: number;

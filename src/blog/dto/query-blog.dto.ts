@@ -3,10 +3,12 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class QueryBlogsDto {
+  @Type(() => Number)
   @IsInt()
   @IsOptional()
   page?: number;
 
+  @Type(() => Number)
   @IsInt()
   @IsOptional()
   limit?: number;

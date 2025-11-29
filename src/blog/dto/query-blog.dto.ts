@@ -1,5 +1,6 @@
 // src/blog/dto/query-blog.dto.ts
-import { IsInt, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class QueryBlogsDto {
   @IsInt()
@@ -29,4 +30,23 @@ export class QueryBlogsDto {
   @IsString()
   @IsOptional()
   status?: string; // public: default = "PUBLISHED"
+}
+
+
+export class QueryBlogsAllDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
 }

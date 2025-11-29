@@ -523,4 +523,39 @@ export class BlogsService {
     }
     return { success: true };
   }
+
+   async listAllWithPagination(params: QueryBlogsDto & { page: number; limit: number }) {
+    const { page, limit } = params;
+
+    const filter: FilterQuery<BlogDocument> = {};
+    // if (search) {
+    //   filter.$or = [
+    //     { title: { $regex: search, $options: 'i' } },
+    //     { slug: { $regex: search, $options: 'i' } },
+    //   ];
+    // }
+
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.blogModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.blogModel.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages,
+    };
+  }
 }

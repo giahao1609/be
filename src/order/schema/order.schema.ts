@@ -5,7 +5,13 @@ import { User } from 'src/users/schema/user.schema';
 
 export type PreOrderDocument = HydratedDocument<PreOrder>;
 
-export type PreOrderStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
+export type PreOrderStatus =
+  | 'PENDING'          
+  | 'AWAITING_PAYMENT'  
+  | 'PAID'              
+  | 'CONFIRMED'         
+  | 'REJECTED'
+  | 'CANCELLED';
 
 @Schema({ _id: false })
 export class PreOrderItem {
@@ -43,6 +49,13 @@ export class PreOrder {
   @Prop({ type: MoneySchema, required: true })
   totalAmount!: Money;
 
+  @Prop({ type: Number, min: 0, max: 100 })
+  depositPercent?: number; // VD: 30 = 30% tổng tiền
+
+  // Số tiền cọc/Thanh toán yêu cầu (đã tính theo phần trăm tại thời điểm owner quyết định)
+  @Prop({ type: MoneySchema })
+  requiredDepositAmount?: Money;
+
   @Prop({ type: Number, min: 1, required: true })
   guestCount!: number;
 
@@ -60,11 +73,20 @@ export class PreOrder {
 
   @Prop({
     type: String,
-    enum: ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED'],
+    enum: ['PENDING', 'AWAITING_PAYMENT', 'PAID', 'CONFIRMED', 'REJECTED', 'CANCELLED'],
     default: 'PENDING',
     index: true,
   })
   status!: PreOrderStatus;
+
+  @Prop({ type: Date })
+  paymentEmailSentAt?: Date;
+
+  @Prop({ type: Date })
+  paidAt?: Date;
+
+  @Prop({ trim: true })
+  paymentReference?: string;
 
   @Prop({ trim: true })
   ownerNote?: string;

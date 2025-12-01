@@ -251,23 +251,23 @@ export class RestaurantsService {
 
   // ==== logo / cover / gallery như cũ ====
   if (r.logoUrl) {
-    r.logoUrlSigned = await this.uploadService.getSignedUrl(r.logoUrl);
+    r.logoUrl = await this.uploadService.getSignedUrl(r.logoUrl);
   } else {
-    r.logoUrlSigned = null;
+    r.logoUrl = null;
   }
 
   if (r.coverImageUrl) {
-    r.coverImageUrlSigned = await this.uploadService.getSignedUrl(r.coverImageUrl);
+    r.coverImageUrl = await this.uploadService.getSignedUrl(r.coverImageUrl);
   } else {
-    r.coverImageUrlSigned = null;
+    r.coverImageUrl = null;
   }
 
   if (Array.isArray(r.gallery)) {
-    r.gallerySigned = await Promise.all(
+    r.gallery = await Promise.all(
       r.gallery.map((p: string) => this.uploadService.getSignedUrl(p)),
     );
   } else {
-    r.gallerySigned = [];
+    r.gallery = [];
   }
 
   // ==== BANK TRANSFER QR ====
@@ -280,7 +280,7 @@ export class RestaurantsService {
         if (bank.qr?.imageUrl) {
           bank.qr = {
             ...bank.qr,
-            imageUrlSigned: await this.uploadService.getSignedUrl(
+            imageUrl: await this.uploadService.getSignedUrl(
               bank.qr.imageUrl,
             ),
           };
@@ -301,7 +301,7 @@ export class RestaurantsService {
         if (wallet.qr?.imageUrl) {
           wallet.qr = {
             ...wallet.qr,
-            imageUrlSigned: await this.uploadService.getSignedUrl(
+            imageUrl: await this.uploadService.getSignedUrl(
               wallet.qr.imageUrl,
             ),
           };

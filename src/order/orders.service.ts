@@ -1,3 +1,4 @@
+// src/pre-order/orders.service.ts
 import {
   Injectable,
   BadRequestException,
@@ -6,13 +7,25 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
-import { UpdatePreOrderStatusDto } from './dto/update-status.dto';
-import { PreOrder, PreOrderDocument, PreOrderStatus } from './schema/order.schema';
-import { MenuItem, MenuItemDocument, Money } from 'src/menu/schema/menu.schema';
+import { MarkPaidDto, RequestDepositDto, UpdatePreOrderStatusDto } from './dto/update-status.dto';
+import {
+  PreOrder,
+  PreOrderDocument,
+  PreOrderStatus,
+} from './schema/order.schema';
+import {
+  MenuItem,
+  MenuItemDocument,
+  Money,
+} from 'src/menu/schema/menu.schema';
 import { User, UserDocument } from 'src/users/schema/user.schema';
 import { CreatePreOrderDto } from './dto/create-order.dto';
-import { Restaurant, RestaurantDocument } from 'src/restaurants/schema/restaurant.schema';
+import {
+  Restaurant,
+  RestaurantDocument,
+} from 'src/restaurants/schema/restaurant.schema';
 import { MailerService } from '@nestjs-modules/mailer';
+
 
 @Injectable()
 export class PreOrderService {
@@ -35,7 +48,10 @@ export class PreOrderService {
   // =========================================================
   // CREATE PRE-ORDER CHO USER
   // =========================================================
-  async createForUser(userId: string, dto: CreatePreOrderDto): Promise<PreOrder> {
+  async createForUser(
+    userId: string,
+    dto: CreatePreOrderDto,
+  ): Promise<PreOrder> {
     const userObjectId = this.toObjectId(userId);
     const restaurantObjectId = this.toObjectId(dto.restaurantId);
 
@@ -71,7 +87,9 @@ export class PreOrderService {
 
     // Tạo items + tính tổng tiền (dùng basePrice cho đơn giản)
     const items = dto.items.map((itemDto) => {
-      const mi = menuItems.find((m) => m._id.toString() === itemDto.menuItemId);
+      const mi = menuItems.find(
+        (m) => m._id.toString() === itemDto.menuItemId,
+      );
       if (!mi) {
         throw new BadRequestException(
           `MENU_ITEM_NOT_FOUND: ${itemDto.menuItemId}`,
@@ -120,6 +138,8 @@ export class PreOrderService {
       contactPhone: dto.contactPhone,
       note: dto.note,
       status: 'PENDING',
+      depositPercent: undefined,
+      requiredDepositAmount: undefined,
     });
 
     return await doc.save();
@@ -157,13 +177,89 @@ export class PreOrderService {
   }
 
   // =========================================================
-  // OWNER UPDATE STATUS + GỬI EMAIL
-  // PENDING -> CONFIRMED / REJECTED / CANCELLED => gửi mail
+  // OWNER YÊU CẦU CỌC X% / THANH TOÁN TRƯỚC
+  //  - Nếu depositPercent = 0 => CONFIRMED, thanh toán tiền mặt khi tới
+  //  - Nếu depositPercent > 0 => AWAITING_PAYMENT, gửi email yêu cầu thanh toán
   // =========================================================
-  async updateStatus(
+  async requestDeposit(
+    ownerId: string,
     preOrderId: string,
-    dto: UpdatePreOrderStatusDto,
+    dto: RequestDepositDto,
   ): Promise<PreOrder> {
+    const _id = this.toObjectId(preOrderId);
+    const ownerObjectId = this.toObjectId(ownerId);
+
+    const preOrder = await this.preOrderModel.findById(_id).exec();
+    if (!preOrder) {
+      throw new NotFoundException('PRE_ORDER_NOT_FOUND');
+    }
+
+    const restaurant = await this.restaurantModel
+      .findById(preOrder.restaurantId)
+      .exec();
+    if (!restaurant) {
+      throw new NotFoundException('RESTAURANT_NOT_FOUND');
+    }
+
+    if (!restaurant.ownerId.equals(ownerObjectId)) {
+      throw new BadRequestException('NOT_RESTAURANT_OWNER');
+    }
+
+    if (preOrder.status !== 'PENDING') {
+      throw new BadRequestException('ONLY_PENDING_CAN_REQUEST_DEPOSIT');
+    }
+
+    const depositPercent = dto.depositPercent ?? 0;
+    if (depositPercent < 0 || depositPercent > 100) {
+      throw new BadRequestException('INVALID_DEPOSIT_PERCENT');
+    }
+
+    const totalAmount = preOrder.totalAmount?.amount ?? 0;
+    const currency = preOrder.totalAmount?.currency ?? 'VND';
+
+    const requiredAmount = depositPercent > 0
+      ? Math.round(totalAmount * depositPercent) / 100
+      : 0;
+
+    preOrder.depositPercent = depositPercent;
+    preOrder.requiredDepositAmount = {
+      currency,
+      amount: requiredAmount,
+    };
+    preOrder.paymentEmailSentAt = new Date();
+
+    if (depositPercent <= 0) {
+      // Không cần thanh toán trước, xác nhận luôn
+      preOrder.status = 'CONFIRMED';
+    } else {
+      // Cần thanh toán trước
+      preOrder.status = 'AWAITING_PAYMENT';
+    }
+
+    const saved = await preOrder.save();
+
+    const shouldSendEmail = dto.sendEmail !== false; // default: true
+    if (shouldSendEmail) {
+      await this.notifyUserPreOrderStatus(saved, {
+        overrideEmail: dto.overrideEmail,
+        extraNote: dto.emailNote,
+      });
+    }
+
+    return saved;
+  }
+
+  // =========================================================
+  // ĐÁNH DẤU ĐÃ THANH TOÁN (WEBHOOK / OWNER)
+  //  - Chỉ cho phép khi đang AWAITING_PAYMENT
+  //  - set status = PAID
+  // =========================================================
+  async markPaid(
+    actorId: string,
+    preOrderId: string,
+    dto: MarkPaidDto,
+  ): Promise<PreOrder> {
+    // actorId dùng nếu ông muốn log lại, ở đây t chưa check role
     const _id = this.toObjectId(preOrderId);
 
     const preOrder = await this.preOrderModel.findById(_id).exec();
@@ -171,8 +267,131 @@ export class PreOrderService {
       throw new NotFoundException('PRE_ORDER_NOT_FOUND');
     }
 
-    const prevStatus = preOrder.status;
-    const nextStatus: PreOrderStatus = dto.status;
+    if (preOrder.status !== 'AWAITING_PAYMENT') {
+      throw new BadRequestException('ONLY_AWAITING_PAYMENT_CAN_BE_PAID');
+    }
+
+    preOrder.status = 'PAID';
+    preOrder.paidAt = new Date();
+    if (dto.paymentReference) {
+      preOrder.paymentReference = dto.paymentReference;
+    }
+
+    const saved = await preOrder.save();
+
+    await this.notifyUserPreOrderStatus(saved);
+
+    return saved;
+  }
+
+  // =========================================================
+  // OWNER CONFIRM ĐẶT CHỖ
+  //  - Nếu depositPercent > 0 => phải PAID trước
+  //  - Nếu depositPercent = 0 => cho phép từ PENDING
+  // =========================================================
+  async confirm(ownerId: string, preOrderId: string): Promise<PreOrder> {
+    const _id = this.toObjectId(preOrderId);
+    const ownerObjectId = this.toObjectId(ownerId);
+
+    const preOrder = await this.preOrderModel.findById(_id).exec();
+    if (!preOrder) {
+      throw new NotFoundException('PRE_ORDER_NOT_FOUND');
+    }
+
+    const restaurant = await this.restaurantModel
+      .findById(preOrder.restaurantId)
+      .exec();
+    if (!restaurant) {
+      throw new NotFoundException('RESTAURANT_NOT_FOUND');
+    }
+
+    if (!restaurant.ownerId.equals(ownerObjectId)) {
+      throw new BadRequestException('NOT_RESTAURANT_OWNER');
+    }
+
+    const depositPercent = preOrder.depositPercent ?? 0;
+
+    if (depositPercent > 0 && preOrder.status !== 'PAID') {
+      throw new BadRequestException(
+        'MUST_BE_PAID_BEFORE_CONFIRM',
+      );
+    }
+
+    if (depositPercent <= 0 && preOrder.status !== 'PENDING') {
+      // không cọc trước mà lại không ở PENDING thì hơi lạ
+      throw new BadRequestException(
+        'CAN_ONLY_CONFIRM_PENDING_WITHOUT_DEPOSIT',
+      );
+    }
+
+    preOrder.status = 'CONFIRMED';
+    const saved = await preOrder.save();
+
+    await this.notifyUserPreOrderStatus(saved);
+
+    return saved;
+  }
+
+  // =========================================================
+  // UPDATE STATUS CHUNG:
+  //  - CANCELLED: user/owner hủy
+  //  - REJECTED: owner từ chối
+  // (các trạng thái AWAITING_PAYMENT / PAID / CONFIRMED dùng route riêng)
+  // =========================================================
+  async updateStatus(
+    actorId: string,
+    preOrderId: string,
+    dto: UpdatePreOrderStatusDto,
+  ): Promise<PreOrder> {
+    const _id = this.toObjectId(preOrderId);
+    const actorObjectId = this.toObjectId(actorId);
+
+    const preOrder = await this.preOrderModel.findById(_id).exec();
+    if (!preOrder) {
+      throw new NotFoundException('PRE_ORDER_NOT_FOUND');
+    }
+
+    const restaurant = await this.restaurantModel
+      .findById(preOrder.restaurantId)
+      .exec();
+    if (!restaurant) {
+      throw new NotFoundException('RESTAURANT_NOT_FOUND');
+    }
+
+    const isUser = preOrder.userId.equals(actorObjectId);
+    const isOwner = restaurant.ownerId.equals(actorObjectId);
+
+    const nextStatus = dto.status as PreOrderStatus;
+    if (nextStatus !== 'CANCELLED' && nextStatus !== 'REJECTED') {
+      throw new BadRequestException(
+        'STATUS_NOT_ALLOWED_IN_THIS_ENDPOINT',
+      );
+    }
+
+    if (nextStatus === 'CANCELLED') {
+      // cho phép user hủy khi còn PENDING / AWAITING_PAYMENT
+      if (!isUser && !isOwner) {
+        throw new BadRequestException('NOT_ALLOWED_TO_CANCEL');
+      }
+      if (
+        preOrder.status !== 'PENDING' &&
+        preOrder.status !== 'AWAITING_PAYMENT'
+      ) {
+        throw new BadRequestException(
+          'ONLY_PENDING_OR_AWAITING_PAYMENT_CAN_BE_CANCELLED',
+        );
+      }
+    }
+
+    if (nextStatus === 'REJECTED') {
+      // chỉ owner được reject
+      if (!isOwner) {
+        throw new BadRequestException('ONLY_OWNER_CAN_REJECT');
+      }
+      if (preOrder.status !== 'PENDING') {
+        throw new BadRequestException('ONLY_PENDING_CAN_BE_REJECTED');
+      }
+    }
 
     preOrder.status = nextStatus;
     if (dto.ownerNote !== undefined) {
@@ -181,29 +400,27 @@ export class PreOrderService {
 
     const saved = await preOrder.save();
 
-    const shouldNotify =
-      prevStatus === 'PENDING' &&
-      (nextStatus === 'CONFIRMED' ||
-        nextStatus === 'REJECTED' ||
-        nextStatus === 'CANCELLED');
-
-    if (shouldNotify) {
-      await this.notifyUserPreOrderStatus(saved);
-    }
+    await this.notifyUserPreOrderStatus(saved);
 
     return saved;
   }
 
   // =========================================================
-  // GỬI EMAIL CHO USER KHI STATUS ĐỔI
+  // GỬI EMAIL CHO USER KHI STATUS ĐỔI / YÊU CẦU CỌC / THANH TOÁN
   // =========================================================
-  private async notifyUserPreOrderStatus(preOrder: PreOrderDocument) {
+  private async notifyUserPreOrderStatus(
+    preOrder: PreOrderDocument,
+    opts?: { overrideEmail?: string; extraNote?: string },
+  ) {
     const [user, restaurant] = await Promise.all([
       this.userModel.findById(preOrder.userId).exec(),
       this.restaurantModel.findById(preOrder.restaurantId).exec(),
     ]);
 
-    if (!user || !user.email) {
+    if (!user) return;
+
+    const toEmail = opts?.overrideEmail || user.email;
+    if (!toEmail) {
       return; // không có email -> bỏ qua
     }
 
@@ -211,10 +428,11 @@ export class PreOrderService {
       preOrder,
       user,
       restaurant ?? null,
+      opts?.extraNote,
     );
 
     await this.mailer.sendMail({
-      to: user.email,
+      to: toEmail,
       subject,
       html,
       text,
@@ -224,7 +442,13 @@ export class PreOrderService {
   // =========================================================
   // FORMAT HELPERS
   // =========================================================
-  private formatMoney(amount: Money | { currency?: string; amount: number } | null | undefined): string {
+  private formatMoney(
+    amount:
+      | Money
+      | { currency?: string; amount: number }
+      | null
+      | undefined,
+  ): string {
     if (!amount) return '0';
     const currency = amount.currency || 'VND';
     const val = amount.amount ?? 0;
@@ -254,25 +478,52 @@ export class PreOrderService {
 
   // =========================================================
   // BUILD NỘI DUNG EMAIL (HTML + TEXT)
+  //  - Cover hết status: PENDING, AWAITING_PAYMENT, PAID, CONFIRMED, REJECTED, CANCELLED
+  //  - Nếu depositPercent = 0 => ghi rõ thanh toán tiền mặt khi tới
+  //  - Nếu depositPercent > 0 => ghi rõ cọc X% / số tiền + mã thanh toán
   // =========================================================
   private buildPreOrderEmailContent(
     preOrder: PreOrderDocument,
     user: UserDocument,
     restaurant: RestaurantDocument | null,
+    extraNote?: string,
   ): { subject: string; html: string; text: string } {
-    const status = preOrder.status;
+    const status = preOrder.status as PreOrderStatus;
     const restoName = restaurant?.name ?? 'nhà hàng';
     const arrivalStr = this.formatDateTime(preOrder.arrivalTime);
     const totalStr = this.formatMoney(preOrder.totalAmount);
 
+    const paymentCode = preOrder._id?.toString?.() ?? '';
+
+    const depositPercent = preOrder.depositPercent ?? 0;
+    const totalAmount = preOrder.totalAmount?.amount ?? 0;
+    const currency = preOrder.totalAmount?.currency ?? 'VND';
+
+    const depositAmount =
+      preOrder.requiredDepositAmount?.amount ??
+      (depositPercent > 0 ? (totalAmount * depositPercent) / 100 : 0);
+
+    const remainAmount =
+      depositPercent > 0 ? totalAmount - depositAmount : totalAmount;
+
+    const depositStr =
+      depositPercent > 0
+        ? `${depositPercent}% (~${this.formatMoney({
+            currency,
+            amount: depositAmount,
+          })})`
+        : '0% (thanh toán tại quán)';
+
     const statusLabelMap: Record<PreOrderStatus, string> = {
-      PENDING: 'đang chờ xác nhận',
+      PENDING: 'đang chờ nhà hàng xử lý',
+      AWAITING_PAYMENT: 'đang chờ bạn thanh toán',
+      PAID: 'đã thanh toán, chờ nhà hàng xác nhận',
       CONFIRMED: 'đã được xác nhận',
       REJECTED: 'bị từ chối',
       CANCELLED: 'đã bị hủy',
     };
 
-    const statusLabel = statusLabelMap[status];
+    const statusLabel = statusLabelMap[status] ?? status;
 
     // ===== ITEMS TABLE =====
     const itemsRowsHtml = (preOrder.items ?? [])
@@ -282,7 +533,9 @@ export class PreOrderService {
         return `
           <tr>
             <td style="padding:4px 8px;">${it.menuItemName ?? ''}</td>
-            <td style="padding:4px 8px; text-align:center;">${it.quantity}</td>
+            <td style="padding:4px 8px; text-align:center;">${
+              it.quantity
+            }</td>
             <td style="padding:4px 8px; text-align:right;">${unitStr}</td>
             <td style="padding:4px 8px; text-align:right;">${lineTotalStr}</td>
           </tr>`;
@@ -293,19 +546,23 @@ export class PreOrderService {
       .map((it) => {
         const lineTotalStr = this.formatMoney(it.lineTotal);
         const unitStr = this.formatMoney(it.unitPrice);
-        return `- ${it.menuItemName ?? ''} x ${it.quantity} (${unitStr}/phần) = ${lineTotalStr}`;
+        return `- ${it.menuItemName ?? ''} x ${
+          it.quantity
+        } (${unitStr}/phần) = ${lineTotalStr}`;
       })
       .join('\n');
 
-    // ===== PAYMENT (CONFIRMED) =====
-    let paymentHtml = '';
-    let paymentText = '';
+    // ===== PAYMENT METHODS (BANK / WALLET) =====
+    let paymentMethodsHtml = '';
+    let paymentMethodsText = '';
 
-    if (status === 'CONFIRMED' && restaurant?.paymentConfig) {
+    if (restaurant?.paymentConfig) {
       const cfg = restaurant.paymentConfig;
 
       const bankLinesHtml =
-        cfg.bankTransfers && cfg.bankTransfers.length
+        cfg.allowBankTransfer &&
+        cfg.bankTransfers &&
+        cfg.bankTransfers.length
           ? cfg.bankTransfers
               .map((b) => {
                 const qrPart = b.qr?.imageUrl
@@ -332,7 +589,9 @@ export class PreOrderService {
           : '';
 
       const bankLinesText =
-        cfg.bankTransfers && cfg.bankTransfers.length
+        cfg.allowBankTransfer &&
+        cfg.bankTransfers &&
+        cfg.bankTransfers.length
           ? cfg.bankTransfers
               .map((b) => {
                 const lines = [
@@ -348,7 +607,7 @@ export class PreOrderService {
           : '';
 
       const walletLinesHtml =
-        cfg.eWallets && cfg.eWallets.length
+        cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
           ? cfg.eWallets
               .map((w) => {
                 const qrPart = w.qr?.imageUrl
@@ -373,7 +632,7 @@ export class PreOrderService {
           : '';
 
       const walletLinesText =
-        cfg.eWallets && cfg.eWallets.length
+        cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
           ? cfg.eWallets
               .map((w) => {
                 const lines = [
@@ -388,70 +647,147 @@ export class PreOrderService {
               .join('\n  ')
           : '';
 
-      paymentHtml = `
-        <h3>Thông tin thanh toán</h3>
-        <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
+      const cashHtml = cfg.allowCash
+        ? '<p>✓ Chấp nhận thanh toán tiền mặt tại nhà hàng.</p>'
+        : '';
+      const cashText = cfg.allowCash
+        ? '- Thanh toán tiền mặt tại quán'
+        : '';
+
+      paymentMethodsHtml = `
+        ${cashHtml}
         ${
-          cfg.allowCash
-            ? '<p>✓ Chấp nhận thanh toán tiền mặt tại nhà hàng.</p>'
-            : ''
-        }
-        ${
-          cfg.allowBankTransfer && bankLinesHtml
+          bankLinesHtml
             ? `<p><strong>Chuyển khoản ngân hàng:</strong></p><ul>${bankLinesHtml}</ul>`
             : ''
         }
         ${
-          cfg.allowEWallet && walletLinesHtml
+          walletLinesHtml
             ? `<p><strong>Ví điện tử:</strong></p><ul>${walletLinesHtml}</ul>`
             : ''
         }
         ${cfg.generalNote ? `<p><em>${cfg.generalNote}</em></p>` : ''}
       `;
 
-      const cashText = cfg.allowCash ? `- Thanh toán tiền mặt tại quán` : '';
-      const bankText =
-        cfg.allowBankTransfer && bankLinesText
-          ? `- Chuyển khoản ngân hàng:\n  ${bankLinesText}`
-          : '';
-      const walletText =
-        cfg.allowEWallet && walletLinesText
-          ? `- Ví điện tử:\n  ${walletLinesText}`
-          : '';
-
-      paymentText = [
-        `Tổng tiền dự kiến: ${totalStr}`,
+      paymentMethodsText = [
         cashText,
-        bankText,
-        walletText,
+        bankLinesText ? `- Chuyển khoản ngân hàng:\n  ${bankLinesText}` : '',
+        walletLinesText ? `- Ví điện tử:\n  ${walletLinesText}` : '',
         cfg.generalNote ? `Ghi chú: ${cfg.generalNote}` : '',
       ]
         .filter(Boolean)
         .join('\n');
     }
 
-    // ===== SUBJECT THEO STATUS =====
+    // ===== SUBJECT & INTRO MESSAGE THEO STATUS =====
     let subject = `[${restoName}] Đơn đặt chỗ của bạn ${statusLabel}`;
-    if (status === 'CONFIRMED') {
-      subject = `[${restoName}] Đơn đặt chỗ đã được xác nhận`;
+    let intro = `Đơn đặt chỗ của bạn tại ${restoName} hiện đang ở trạng thái: ${statusLabel}.`;
+
+    if (status === 'AWAITING_PAYMENT' && depositPercent > 0) {
+      subject = `[${restoName}] Vui lòng thanh toán trước ${depositStr} để giữ chỗ`;
+      intro = `Nhà hàng yêu cầu thanh toán trước ${depositStr} (tương đương ${this.formatMoney(
+        { currency, amount: depositAmount },
+      )}) để giữ chỗ. Vui lòng thanh toán và ghi MÃ THANH TOÁN: ${paymentCode} trong nội dung.`;
+    } else if (status === 'PAID') {
+      subject = `[${restoName}] Đã nhận thanh toán đặt chỗ của bạn`;
+      intro = `Nhà hàng đã nhận được khoản thanh toán của bạn (mã thanh toán: ${paymentCode}). Đơn đặt chỗ đang chờ xác nhận cuối cùng.`;
+    } else if (status === 'CONFIRMED') {
+      if (depositPercent > 0) {
+        subject = `[${restoName}] Đơn đặt chỗ đã được xác nhận`;
+        intro = `Đơn đặt chỗ của bạn đã được xác nhận. Nhà hàng đã ghi nhận khoản thanh toán trước ${depositStr}. Mã thanh toán/đặt chỗ của bạn là: ${paymentCode}.`;
+      } else {
+        subject = `[${restoName}] Đơn đặt chỗ đã được xác nhận`;
+        intro = `Đơn đặt chỗ của bạn đã được xác nhận. Bạn sẽ thanh toán trực tiếp tại nhà hàng. Mã đặt chỗ của bạn là: ${paymentCode}.`;
+      }
     } else if (status === 'REJECTED') {
       subject = `[${restoName}] Đơn đặt chỗ bị từ chối`;
+      intro = `Rất tiếc, đơn đặt chỗ của bạn đã bị nhà hàng từ chối.`;
     } else if (status === 'CANCELLED') {
       subject = `[${restoName}] Đơn đặt chỗ đã bị hủy`;
+      intro = `Đơn đặt chỗ của bạn đã bị hủy.`;
+    }
+
+    if (extraNote) {
+      intro += `\n\n${extraNote}`;
+    }
+
+    // ===== PAYMENT SECTION (HTML & TEXT) =====
+    let paymentHtml = '';
+    let paymentText = '';
+
+    if (
+      (status === 'AWAITING_PAYMENT' ||
+        status === 'PAID' ||
+        status === 'CONFIRMED') &&
+      restaurant?.paymentConfig
+    ) {
+      if (depositPercent > 0) {
+        paymentHtml = `
+          <h3>Thông tin thanh toán</h3>
+          <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
+          <p>Tiền cần thanh toán trước: <strong>${this.formatMoney({
+            currency,
+            amount: depositAmount,
+          })}</strong> (${depositPercent}%)</p>
+          <p>Phần còn lại dự kiến: <strong>${this.formatMoney({
+            currency,
+            amount: remainAmount,
+          })}</strong> (thanh toán tại quán nếu có phát sinh).</p>
+          <p>Mã thanh toán/đặt chỗ của bạn: <strong>${paymentCode}</strong></p>
+          ${paymentMethodsHtml}
+        `;
+
+        paymentText = [
+          `Tổng tiền dự kiến: ${totalStr}`,
+          `Thanh toán trước: ${this.formatMoney({
+            currency,
+            amount: depositAmount,
+          })} (${depositPercent}%)`,
+          `Phần còn lại dự kiến: ${this.formatMoney({
+            currency,
+            amount: remainAmount,
+          })}`,
+          `Mã thanh toán/đặt chỗ: ${paymentCode}`,
+          paymentMethodsText,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      } else {
+        // không cọc, thanh toán toàn bộ khi đến quán
+        paymentHtml = `
+          <h3>Thanh toán</h3>
+          <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
+          <p>Bạn sẽ thanh toán toàn bộ tại nhà hàng.</p>
+          ${paymentMethodsHtml}
+        `;
+
+        paymentText = [
+          `Tổng tiền dự kiến: ${totalStr}`,
+          `Bạn sẽ thanh toán toàn bộ tại nhà hàng.`,
+          paymentMethodsText,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      }
     }
 
     // ===== HTML BODY =====
     const html = `
       <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; font-size:14px; color:#222;">
         <p>Xin chào ${user.displayName || user.email},</p>
-        <p>Đơn đặt chỗ của bạn tại <strong>${restoName}</strong> hiện đang ở trạng thái: <strong>${statusLabel}</strong>.</p>
+        <p>${intro}</p>
 
         <h3>Thông tin đặt chỗ</h3>
         <ul>
+          <li>Nhà hàng: <strong>${restoName}</strong></li>
           <li>Thời gian đến dự kiến: <strong>${arrivalStr}</strong></li>
           <li>Số khách: <strong>${preOrder.guestCount}</strong></li>
-          <li>Người liên hệ: <strong>${preOrder.contactName}</strong> (${preOrder.contactPhone})</li>
+          <li>Người liên hệ: <strong>${preOrder.contactName}</strong> (${
+      preOrder.contactPhone
+    })</li>
           <li>Tổng tiền dự kiến: <strong>${totalStr}</strong></li>
+          <li>Tỉ lệ thanh toán trước: <strong>${depositStr}</strong></li>
+          <li>Mã thanh toán/đặt chỗ: <strong>${paymentCode}</strong></li>
         </ul>
 
         ${
@@ -480,7 +816,7 @@ export class PreOrderService {
           </tbody>
         </table>
 
-        ${status === 'CONFIRMED' && paymentHtml ? paymentHtml : ''}
+        ${paymentHtml || ''}
 
         <p style="margin-top:16px;">Cảm ơn bạn đã đặt chỗ tại <strong>${restoName}</strong>.</p>
       </div>
@@ -492,12 +828,15 @@ export class PreOrderService {
     textLines.push(
       `Xin chào ${user.displayName || user.email},`,
       ``,
-      `Đơn đặt chỗ của bạn tại ${restoName} hiện đang ở trạng thái: ${statusLabel}.`,
+      intro,
       ``,
+      `Nhà hàng: ${restoName}`,
       `Thời gian đến dự kiến: ${arrivalStr}`,
       `Số khách: ${preOrder.guestCount}`,
       `Người liên hệ: ${preOrder.contactName} (${preOrder.contactPhone})`,
       `Tổng tiền dự kiến: ${totalStr}`,
+      `Tỉ lệ thanh toán trước: ${depositStr}`,
+      `Mã thanh toán/đặt chỗ: ${paymentCode}`,
       ``,
     );
 
@@ -512,7 +851,7 @@ export class PreOrderService {
       textLines.push(`Chi tiết món:`, itemsRowsText, ``);
     }
 
-    if (status === 'CONFIRMED' && paymentText) {
+    if (paymentText) {
       textLines.push(`Thông tin thanh toán:`, paymentText, ``);
     }
 

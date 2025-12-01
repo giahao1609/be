@@ -1883,6 +1883,7 @@ export class RestaurantsService {
                 depth: 1,
                 path: 1,
                 sortIndex: 1,
+                extra: 1,
               },
             },
           ],
@@ -1974,6 +1975,7 @@ export class RestaurantsService {
                   depth: 1,
                   path: 1,
                   sortIndex: 1,
+                  extra: 1,
                 },
               },
             ],
@@ -2004,35 +2006,93 @@ export class RestaurantsService {
   }
 
 
-  async findByOwnerId(ownerId: string, q: OwnerRestaurantsQueryDto) {
-    const ownerObjId = new Types.ObjectId(ownerId);
-    const page = Math.max(1, Number(q.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
-    const skip = (page - 1) * limit;
+async findByOwnerId(ownerId: string, q: OwnerRestaurantsQueryDto) {
+  const ownerObjId = new Types.ObjectId(ownerId);
+  const page = Math.max(1, Number(q.page ?? 1));
+  const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
+  const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
-      this.restaurantModel
-        .find({ ownerId: ownerObjId })
-        .skip(skip)
-        .limit(limit)
-        .lean()
-        .exec(),
-      this.restaurantModel.countDocuments({ ownerId: ownerObjId }).exec(),
-    ]);
+  // ===== pipeline lấy list =====
+  const pipeline: any[] = [
+    {
+      $match: {
+        ownerId: ownerObjId,
+      },
+    },
+    {
+      $sort: {
+        createdAt: -1, // hoặc updatedAt tuỳ ông
+      },
+    },
+    { $skip: skip },
+    { $limit: limit },
 
-    const withSigned = await Promise.all(
-      items.map((it) => this.expandSignedUrls(it)),
-    );
+    // Lookup category
+    {
+      $lookup: {
+        from: 'categories',
+        localField: 'categoryId',
+        foreignField: '_id',
+        as: 'category',
+        pipeline: [
+          { $match: { isActive: true } },
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              slug: 1,
+              description: 1,
+              image: 1,
+              parentId: 1,
+              depth: 1,
+              path: 1,
+              sortIndex: 1,
+              extra: 1, // 👈 lấy luôn extra (icon, màu, v.v.)
+            },
+          },
+        ],
+      },
+    },
+    {
+      $unwind: {
+        path: '$category',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+  ];
 
-    return {
-      ownerId,
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit),
-      items: withSigned,
-    };
-  }
+  const [itemsAgg, total] = await Promise.all([
+    this.restaurantModel.aggregate(pipeline).exec(),
+    this.restaurantModel.countDocuments({ ownerId: ownerObjId }).exec(),
+  ]);
+
+  const withSigned = await Promise.all(
+    itemsAgg.map((it) => this.expandSignedUrls(it)),
+  );
+
+  const items = withSigned.map((r: any) => ({
+    ...r,
+    // toạ độ cho FE
+    coordinates: {
+      lat: r.location?.coordinates?.[1] ?? null,
+      lng: r.location?.coordinates?.[0] ?? null,
+    },
+    // flatten vài field category cho FE dễ dùng
+    categoryName: r.category?.name ?? null,
+    categorySlug: r.category?.slug ?? null,
+    categoryIcon: r.category?.extra?.icon ?? null,
+  }));
+
+  return {
+    ownerId,
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
+    items,
+  };
+}
+
 
   // async expandSignedUrls(doc: any) {
   //   if (!doc) return doc;
@@ -2159,6 +2219,7 @@ export class RestaurantsService {
                 depth: 1,
                 path: 1,
                 sortIndex: 1,
+                extra: 1,
               },
             },
           ],

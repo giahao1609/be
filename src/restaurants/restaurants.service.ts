@@ -1945,8 +1945,12 @@ export class RestaurantsService {
 
 
 
-  // ===== DETAIL =====
-  async findDetail(idOrSlug: string) {
+  async findDetail(
+    idOrSlug: string,
+    opts?: { userLat?: number; userLng?: number },
+  ) {
+    const { userLat, userLng } = opts ?? {};
+
     const isObjectId = Types.ObjectId.isValid(idOrSlug);
     const filter: FilterQuery<RestaurantDocument> = isObjectId
       ? { _id: new Types.ObjectId(idOrSlug) }
@@ -1994,104 +1998,177 @@ export class RestaurantsService {
 
     const signed = await this.expandSignedUrls(doc);
 
+    // toạ độ quán
+    const locCoords = signed.location?.coordinates;
+    const shopLng =
+      Array.isArray(locCoords) && locCoords.length >= 2
+        ? Number(locCoords[0])
+        : undefined;
+    const shopLat =
+      Array.isArray(locCoords) && locCoords.length >= 2
+        ? Number(locCoords[1])
+        : undefined;
+
+    let distanceKm: number | null = null;
+    let distanceText: string | null = null;
+
+    // nếu có userLat/userLng + toạ độ quán thì tính khoảng cách
+    if (
+      typeof userLat === 'number' &&
+      typeof userLng === 'number' &&
+      !Number.isNaN(userLat) &&
+      !Number.isNaN(userLng) &&
+      typeof shopLat === 'number' &&
+      typeof shopLng === 'number' &&
+      !Number.isNaN(shopLat) &&
+      !Number.isNaN(shopLng)
+    ) {
+      distanceKm = this.haversineDistanceKm(userLat, userLng, shopLat, shopLng);
+      distanceText = this.formatDistance(distanceKm);
+    }
+
     return {
       ...signed,
       coordinates: {
-        lat: signed.location?.coordinates?.[1] ?? null,
-        lng: signed.location?.coordinates?.[0] ?? null,
+        lat: shopLat ?? null,
+        lng: shopLng ?? null,
       },
       categoryName: signed.category?.name ?? null,
       categorySlug: signed.category?.slug ?? null,
+      distanceKm,
+      distanceText,
     };
   }
 
+  // ===== helpers =====
 
-async findByOwnerId(ownerId: string, q: OwnerRestaurantsQueryDto) {
-  const ownerObjId = new Types.ObjectId(ownerId);
-  const page = Math.max(1, Number(q.page ?? 1));
-  const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
-  const skip = (page - 1) * limit;
+  /** Haversine distance (km) giữa 2 toạ độ */
+  private haversineDistanceKm(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ): number {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const R = 6371; // bán kính Trái Đất (km)
 
-  // ===== pipeline lấy list =====
-  const pipeline: any[] = [
-    {
-      $match: {
-        ownerId: ownerObjId,
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
+
+    return d;
+  }
+
+  /** Format khoảng cách thành text (m / km) */
+  private formatDistance(km: number | null): string | null {
+    if (km == null || !Number.isFinite(km)) return null;
+
+    if (km < 1) {
+      // < 1km thì hiển thị mét
+      const meters = Math.round(km * 1000);
+      return `${meters} m`;
+    }
+
+    return `${km.toFixed(2)} km`;
+  }
+
+
+
+  async findByOwnerId(ownerId: string, q: OwnerRestaurantsQueryDto) {
+    const ownerObjId = new Types.ObjectId(ownerId);
+    const page = Math.max(1, Number(q.page ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
+    const skip = (page - 1) * limit;
+
+    // ===== pipeline lấy list =====
+    const pipeline: any[] = [
+      {
+        $match: {
+          ownerId: ownerObjId,
+        },
       },
-    },
-    {
-      $sort: {
-        createdAt: -1, // hoặc updatedAt tuỳ ông
+      {
+        $sort: {
+          createdAt: -1, // hoặc updatedAt tuỳ ông
+        },
       },
-    },
-    { $skip: skip },
-    { $limit: limit },
+      { $skip: skip },
+      { $limit: limit },
 
-    // Lookup category
-    {
-      $lookup: {
-        from: 'categories',
-        localField: 'categoryId',
-        foreignField: '_id',
-        as: 'category',
-        pipeline: [
-          { $match: { isActive: true } },
-          {
-            $project: {
-              _id: 1,
-              name: 1,
-              slug: 1,
-              description: 1,
-              image: 1,
-              parentId: 1,
-              depth: 1,
-              path: 1,
-              sortIndex: 1,
-              extra: 1, // 👈 lấy luôn extra (icon, màu, v.v.)
+      // Lookup category
+      {
+        $lookup: {
+          from: 'categories',
+          localField: 'categoryId',
+          foreignField: '_id',
+          as: 'category',
+          pipeline: [
+            { $match: { isActive: true } },
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                slug: 1,
+                description: 1,
+                image: 1,
+                parentId: 1,
+                depth: 1,
+                path: 1,
+                sortIndex: 1,
+                extra: 1, // 👈 lấy luôn extra (icon, màu, v.v.)
+              },
             },
-          },
-        ],
+          ],
+        },
       },
-    },
-    {
-      $unwind: {
-        path: '$category',
-        preserveNullAndEmptyArrays: true,
+      {
+        $unwind: {
+          path: '$category',
+          preserveNullAndEmptyArrays: true,
+        },
       },
-    },
-  ];
+    ];
 
-  const [itemsAgg, total] = await Promise.all([
-    this.restaurantModel.aggregate(pipeline).exec(),
-    this.restaurantModel.countDocuments({ ownerId: ownerObjId }).exec(),
-  ]);
+    const [itemsAgg, total] = await Promise.all([
+      this.restaurantModel.aggregate(pipeline).exec(),
+      this.restaurantModel.countDocuments({ ownerId: ownerObjId }).exec(),
+    ]);
 
-  const withSigned = await Promise.all(
-    itemsAgg.map((it) => this.expandSignedUrls(it)),
-  );
+    const withSigned = await Promise.all(
+      itemsAgg.map((it) => this.expandSignedUrls(it)),
+    );
 
-  const items = withSigned.map((r: any) => ({
-    ...r,
-    // toạ độ cho FE
-    coordinates: {
-      lat: r.location?.coordinates?.[1] ?? null,
-      lng: r.location?.coordinates?.[0] ?? null,
-    },
-    // flatten vài field category cho FE dễ dùng
-    categoryName: r.category?.name ?? null,
-    categorySlug: r.category?.slug ?? null,
-    categoryIcon: r.category?.extra?.icon ?? null,
-  }));
+    const items = withSigned.map((r: any) => ({
+      ...r,
+      // toạ độ cho FE
+      coordinates: {
+        lat: r.location?.coordinates?.[1] ?? null,
+        lng: r.location?.coordinates?.[0] ?? null,
+      },
+      // flatten vài field category cho FE dễ dùng
+      categoryName: r.category?.name ?? null,
+      categorySlug: r.category?.slug ?? null,
+      categoryIcon: r.category?.extra?.icon ?? null,
+    }));
 
-  return {
-    ownerId,
-    page,
-    limit,
-    total,
-    pages: Math.ceil(total / limit),
-    items,
-  };
-}
+    return {
+      ownerId,
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      items,
+    };
+  }
 
 
   // async expandSignedUrls(doc: any) {

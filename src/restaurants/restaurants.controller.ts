@@ -231,10 +231,29 @@ export class OwnerRestaurantsController {
     return this.restaurantsService.findMany(query);
   }
 
-  // GET /restaurants/:idOrSlug
-  @Get('detail/:idOrSlug')
-  async detail(@Param('idOrSlug') idOrSlug: string) {
-    return this.restaurantsService.findDetail(idOrSlug);
+ @Get('detail/:idOrSlug')
+  async detail(
+    @Param('idOrSlug') idOrSlug: string,
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+  ) {
+    const userLat = lat !== undefined ? Number(lat) : undefined;
+    const userLng = lng !== undefined ? Number(lng) : undefined;
+
+    // nếu parse ra NaN thì bỏ qua
+    const safeLat =
+      typeof userLat === 'number' && !Number.isNaN(userLat)
+        ? userLat
+        : undefined;
+    const safeLng =
+      typeof userLng === 'number' && !Number.isNaN(userLng)
+        ? userLng
+        : undefined;
+
+    return this.restaurantsService.findDetail(idOrSlug, {
+      userLat: safeLat,
+      userLng: safeLng,
+    });
   }
 
   @Get("get-by-owner")

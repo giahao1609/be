@@ -330,7 +330,7 @@ export class UploadService {
       await file.makePublic();
 
       const publicUrl = this.buildPublicUrl(filePath);
-      return { url: publicUrl };
+      return  publicUrl ;
     } catch (error) {
       console.error('🔥 getSignedUrl Error:', error);
       throw new InternalServerErrorException('Failed to refresh public URL');

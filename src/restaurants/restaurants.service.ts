@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
+import { FilterQuery, Model, PipelineStage, Types, UpdateQuery } from 'mongoose';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { Restaurant, RestaurantDocument } from './schema/restaurant.schema';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
@@ -31,7 +31,7 @@ export class RestaurantsService {
     @InjectModel(Restaurant.name)
     private readonly restaurantModel: Model<RestaurantDocument>,
     private readonly uploadService: UploadService,
-  ) {}
+  ) { }
 
   private slugify(s: string) {
     return s
@@ -245,201 +245,201 @@ export class RestaurantsService {
   // }
 
   private async expandSignedUrls(restaurant: any) {
-  if (!restaurant) return restaurant;
+    if (!restaurant) return restaurant;
 
-  const r = { ...restaurant };
+    const r = { ...restaurant };
 
-  // ==== logo / cover / gallery như cũ ====
-  if (r.logoUrl) {
-    r.logoUrl = await this.uploadService.getSignedUrl(r.logoUrl);
-  } else {
-    r.logoUrl = null;
+    // ==== logo / cover / gallery như cũ ====
+    if (r.logoUrl) {
+      r.logoUrl = await this.uploadService.getSignedUrl(r.logoUrl);
+    } else {
+      r.logoUrl = null;
+    }
+
+    if (r.coverImageUrl) {
+      r.coverImageUrl = await this.uploadService.getSignedUrl(r.coverImageUrl);
+    } else {
+      r.coverImageUrl = null;
+    }
+
+    if (Array.isArray(r.gallery)) {
+      r.gallery = await Promise.all(
+        r.gallery.map((p: string) => this.uploadService.getSignedUrl(p)),
+      );
+    } else {
+      r.gallery = [];
+    }
+
+    // ==== BANK TRANSFER QR ====
+    if (r.paymentConfig?.bankTransfers?.length) {
+      r.paymentConfig = { ...r.paymentConfig };
+      r.paymentConfig.bankTransfers = await Promise.all(
+        r.paymentConfig.bankTransfers.map(async (b: any) => {
+          const bank = { ...b };
+
+          if (bank.qr?.imageUrl) {
+            bank.qr = {
+              ...bank.qr,
+              imageUrl: await this.uploadService.getSignedUrl(
+                bank.qr.imageUrl,
+              ),
+            };
+          }
+
+          return bank;
+        }),
+      );
+    }
+
+    // ==== EWALLET QR ====
+    if (r.paymentConfig?.eWallets?.length) {
+      r.paymentConfig = { ...(r.paymentConfig ?? {}) };
+      r.paymentConfig.eWallets = await Promise.all(
+        r.paymentConfig.eWallets.map(async (w: any) => {
+          const wallet = { ...w };
+
+          if (wallet.qr?.imageUrl) {
+            wallet.qr = {
+              ...wallet.qr,
+              imageUrl: await this.uploadService.getSignedUrl(
+                wallet.qr.imageUrl,
+              ),
+            };
+          }
+
+          return wallet;
+        }),
+      );
+    }
+
+    return r;
   }
-
-  if (r.coverImageUrl) {
-    r.coverImageUrl = await this.uploadService.getSignedUrl(r.coverImageUrl);
-  } else {
-    r.coverImageUrl = null;
-  }
-
-  if (Array.isArray(r.gallery)) {
-    r.gallery = await Promise.all(
-      r.gallery.map((p: string) => this.uploadService.getSignedUrl(p)),
-    );
-  } else {
-    r.gallery = [];
-  }
-
-  // ==== BANK TRANSFER QR ====
-  if (r.paymentConfig?.bankTransfers?.length) {
-    r.paymentConfig = { ...r.paymentConfig };
-    r.paymentConfig.bankTransfers = await Promise.all(
-      r.paymentConfig.bankTransfers.map(async (b: any) => {
-        const bank = { ...b };
-
-        if (bank.qr?.imageUrl) {
-          bank.qr = {
-            ...bank.qr,
-            imageUrl: await this.uploadService.getSignedUrl(
-              bank.qr.imageUrl,
-            ),
-          };
-        }
-
-        return bank;
-      }),
-    );
-  }
-
-  // ==== EWALLET QR ====
-  if (r.paymentConfig?.eWallets?.length) {
-    r.paymentConfig = { ...(r.paymentConfig ?? {}) };
-    r.paymentConfig.eWallets = await Promise.all(
-      r.paymentConfig.eWallets.map(async (w: any) => {
-        const wallet = { ...w };
-
-        if (wallet.qr?.imageUrl) {
-          wallet.qr = {
-            ...wallet.qr,
-            imageUrl: await this.uploadService.getSignedUrl(
-              wallet.qr.imageUrl,
-            ),
-          };
-        }
-
-        return wallet;
-      }),
-    );
-  }
-
-  return r;
-}
 
 
   private normalizePaymentConfigRaw(raw: any) {
-  if (!raw) return {};
+    if (!raw) return {};
 
-  let cfg = raw;
-  if (typeof raw === 'string') {
-    try {
-      cfg = JSON.parse(raw);
-    } catch {
-      cfg = {};
+    let cfg = raw;
+    if (typeof raw === 'string') {
+      try {
+        cfg = JSON.parse(raw);
+      } catch {
+        cfg = {};
+      }
     }
-  }
 
-  const result: any = {
-    allowCash:
-      typeof cfg.allowCash === 'boolean' ? cfg.allowCash : !!cfg.allowCash,
-    allowCard:
-      typeof cfg.allowCard === 'boolean' ? cfg.allowCard : !!cfg.allowCard,
-    bankTransfers: Array.isArray(cfg.bankTransfers)
-      ? cfg.bankTransfers.map((b: any) => ({
+    const result: any = {
+      allowCash:
+        typeof cfg.allowCash === 'boolean' ? cfg.allowCash : !!cfg.allowCash,
+      allowCard:
+        typeof cfg.allowCard === 'boolean' ? cfg.allowCard : !!cfg.allowCard,
+      bankTransfers: Array.isArray(cfg.bankTransfers)
+        ? cfg.bankTransfers.map((b: any) => ({
           bankName: b?.bankName?.toString().trim() || undefined,
           accountName: b?.accountName?.toString().trim() || undefined,
           accountNumber: b?.accountNumber?.toString().trim() || undefined,
           branch: b?.branch?.toString().trim() || undefined,
           qrImagePath: b?.qrImagePath?.toString().trim() || undefined,
         }))
-      : [],
-    ewallets: Array.isArray(cfg.ewallets)
-      ? cfg.ewallets.map((w: any) => ({
+        : [],
+      ewallets: Array.isArray(cfg.ewallets)
+        ? cfg.ewallets.map((w: any) => ({
           provider: w?.provider?.toString().trim() || undefined,
           accountName: w?.accountName?.toString().trim() || undefined,
           phone: w?.phone?.toString().trim() || undefined,
           qrImagePath: w?.qrImagePath?.toString().trim() || undefined,
         }))
-      : [],
-  };
+        : [],
+    };
 
-  return result;
-}
-
-/**
- * Gán QR upload cho bankTransfers / ewallets theo index.
- * - Nếu đã có phần tử -> override qrImagePath
- * - Nếu chưa có -> push object mới chỉ có qrImagePath
- */
-private async attachPaymentQrUploads(
-  slug: string,
-  paymentConfig: any | undefined,
-  files?: UploadFiles,
-): Promise<any | undefined> {
-  if (!files) return paymentConfig;
-
-  // Chuẩn hoá paymentConfig về đúng shape
-  const config: any = {
-    ...(paymentConfig ?? {}),
-    bankTransfers: paymentConfig?.bankTransfers?.map((b) => ({
-      ...b,
-      qr: b.qr ?? {},
-    })) ?? [],
-    eWallets: paymentConfig?.eWallets?.map((w) => ({
-      ...w,
-      qr: w.qr ?? {},
-    })) ?? [],
-  };
-
-  // ===== BANK QRs =====
-  if (files.bankQrs?.length) {
-    const up = await this.uploadService.uploadMultipleToGCS(
-      files.bankQrs,
-      `restaurants/${slug}/payment/bank`,
-    );
-
-    const paths = up.paths ?? [];
-
-    paths.forEach((path, idx) => {
-      // nếu đã có bankTransfers[idx] thì gắn qr.imageUrl vào
-      if (config.bankTransfers[idx]) {
-        config.bankTransfers[idx].qr = {
-          ...(config.bankTransfers[idx].qr ?? {}),
-          imageUrl: path,
-        };
-      } else {
-        // nếu FE chỉ upload QR mà chưa gửi thông tin bank, vẫn lưu được
-        config.bankTransfers.push({
-          bankCode: undefined,
-          bankName: undefined,
-          accountName: undefined,
-          accountNumber: undefined,
-          branch: undefined,
-          qr: { imageUrl: path },
-        });
-      }
-    });
+    return result;
   }
 
-  // ===== EWALLET QRs =====
-  if (files.ewalletQrs?.length) {
-    const up = await this.uploadService.uploadMultipleToGCS(
-      files.ewalletQrs,
-      `restaurants/${slug}/payment/ewallet`,
-    );
+  /**
+   * Gán QR upload cho bankTransfers / ewallets theo index.
+   * - Nếu đã có phần tử -> override qrImagePath
+   * - Nếu chưa có -> push object mới chỉ có qrImagePath
+   */
+  private async attachPaymentQrUploads(
+    slug: string,
+    paymentConfig: any | undefined,
+    files?: UploadFiles,
+  ): Promise<any | undefined> {
+    if (!files) return paymentConfig;
 
-    const paths = up.paths ?? [];
+    // Chuẩn hoá paymentConfig về đúng shape
+    const config: any = {
+      ...(paymentConfig ?? {}),
+      bankTransfers: paymentConfig?.bankTransfers?.map((b) => ({
+        ...b,
+        qr: b.qr ?? {},
+      })) ?? [],
+      eWallets: paymentConfig?.eWallets?.map((w) => ({
+        ...w,
+        qr: w.qr ?? {},
+      })) ?? [],
+    };
 
-    paths.forEach((path, idx) => {
-      if (config.eWallets[idx]) {
-        config.eWallets[idx].qr = {
-          ...(config.eWallets[idx].qr ?? {}),
-          imageUrl: path,
-        };
-      } else {
-        config.eWallets.push({
-          provider: 'MOMO',
-          displayName: undefined,
-          phoneNumber: undefined,
-          accountId: undefined,
-          note: undefined,
-          qr: { imageUrl: path },
-        });
-      }
-    });
+    // ===== BANK QRs =====
+    if (files.bankQrs?.length) {
+      const up = await this.uploadService.uploadMultipleToGCS(
+        files.bankQrs,
+        `restaurants/${slug}/payment/bank`,
+      );
+
+      const paths = up.paths ?? [];
+
+      paths.forEach((path, idx) => {
+        // nếu đã có bankTransfers[idx] thì gắn qr.imageUrl vào
+        if (config.bankTransfers[idx]) {
+          config.bankTransfers[idx].qr = {
+            ...(config.bankTransfers[idx].qr ?? {}),
+            imageUrl: path,
+          };
+        } else {
+          // nếu FE chỉ upload QR mà chưa gửi thông tin bank, vẫn lưu được
+          config.bankTransfers.push({
+            bankCode: undefined,
+            bankName: undefined,
+            accountName: undefined,
+            accountNumber: undefined,
+            branch: undefined,
+            qr: { imageUrl: path },
+          });
+        }
+      });
+    }
+
+    // ===== EWALLET QRs =====
+    if (files.ewalletQrs?.length) {
+      const up = await this.uploadService.uploadMultipleToGCS(
+        files.ewalletQrs,
+        `restaurants/${slug}/payment/ewallet`,
+      );
+
+      const paths = up.paths ?? [];
+
+      paths.forEach((path, idx) => {
+        if (config.eWallets[idx]) {
+          config.eWallets[idx].qr = {
+            ...(config.eWallets[idx].qr ?? {}),
+            imageUrl: path,
+          };
+        } else {
+          config.eWallets.push({
+            provider: 'MOMO',
+            displayName: undefined,
+            phoneNumber: undefined,
+            accountId: undefined,
+            note: undefined,
+            qr: { imageUrl: path },
+          });
+        }
+      });
+    }
+
+    return config;
   }
-
-  return config;
-}
 
 
   // ===== CREATE =====
@@ -535,103 +535,103 @@ private async attachPaymentQrUploads(
   // }
 
   async createWithUploads(
-  dto: CreateRestaurantDto,
-  ownerId: string,
-  files?: UploadFiles,
-) {
-  if (!ownerId) throw new BadRequestException('ownerId is required');
+    dto: CreateRestaurantDto,
+    ownerId: string,
+    files?: UploadFiles,
+  ) {
+    if (!ownerId) throw new BadRequestException('ownerId is required');
 
-  const ownerObjectId =
-    typeof ownerId === 'string' ? new Types.ObjectId(ownerId) : ownerId;
+    const ownerObjectId =
+      typeof ownerId === 'string' ? new Types.ObjectId(ownerId) : ownerId;
 
-  const data = this.normalizeCreateDto(dto);
+    const data = this.normalizeCreateDto(dto);
 
-  // parse + chuẩn hoá paymentConfig
-  data.paymentConfig = this.normalizePaymentConfigRaw(data.paymentConfig);
+    // parse + chuẩn hoá paymentConfig
+    data.paymentConfig = this.normalizePaymentConfigRaw(data.paymentConfig);
 
-  let slug = (data.slug ?? this.slugify(data.name)).toLowerCase().trim();
-  slug = await this.ensureUniqueSlug(slug);
+    let slug = (data.slug ?? this.slugify(data.name)).toLowerCase().trim();
+    slug = await this.ensureUniqueSlug(slug);
 
-  // sync location từ address.coordinates nếu cần
-  if (data.address?.coordinates && !data.location?.coordinates) {
-    data.location = {
-      ...(data.location ?? {}),
-      type: 'Point',
-      coordinates: data.address.coordinates,
-    };
-  }
-
-  if (data.location?.type && data.location.type !== 'Point') {
-    throw new BadRequestException('location.type must be "Point"');
-  }
-  if (data.address?.locationType && data.address.locationType !== 'Point') {
-    throw new BadRequestException('address.locationType must be "Point"');
-  }
-
-  // upload logo / cover / gallery
-  const uploads = await this.handleUploadsForRestaurant(slug, files);
-
-  // upload & gắn QR payment vào paymentConfig.*
-  data.paymentConfig = await this.attachPaymentQrUploads(
-    slug,
-    data.paymentConfig,
-    files,
-  );
-
-  const searchTerms = this.buildSearchTerms(data);
-
-  try {
-    const created = await this.restaurantModel.create({
-      ownerId: ownerObjectId,
-      categoryId: data.categoryId
-        ? new Types.ObjectId(data.categoryId)
-        : undefined,
-
-      name: data.name,
-      shortName: data.shortName?.trim(),
-      slug,
-
-      registrationNumber: data.registrationNumber?.trim(),
-      taxCode: data.taxCode?.trim(),
-
-      phone: data.phone?.trim(),
-      website: data.website?.trim(),
-      email: data.email?.trim(),
-
-      logoUrl: uploads.logoPath ?? data.logoUrl?.trim() ?? '',
-      coverImageUrl: uploads.coverPath ?? data.coverImageUrl?.trim() ?? '',
-      gallery: data.gallery,
-
-      address: data.address,
-      location: data.location ?? { type: 'Point', coordinates: undefined },
-
-      cuisine: data.cuisine,
-      priceRange: data.priceRange ?? '',
-      rating: data.rating ?? null,
-      amenities: data.amenities,
-
-      openingHours: data.openingHours,
-
-      metaTitle: data.metaTitle ?? '',
-      metaDescription: data.metaDescription ?? '',
-      keywords: data.keywords,
-      tags: data.tags,
-      searchTerms,
-
-      paymentConfig: data.paymentConfig ?? {},
-      extra: data.extra ?? {},
-      isActive: data.isActive ?? true,
-    });
-
-    const lean = (await created.populate([])).toObject();
-    return await this.expandSignedUrls(lean);
-  } catch (err: any) {
-    if (err?.code === 11000 && err?.keyPattern?.slug) {
-      throw new ConflictException('Slug already exists');
+    // sync location từ address.coordinates nếu cần
+    if (data.address?.coordinates && !data.location?.coordinates) {
+      data.location = {
+        ...(data.location ?? {}),
+        type: 'Point',
+        coordinates: data.address.coordinates,
+      };
     }
-    throw err;
+
+    if (data.location?.type && data.location.type !== 'Point') {
+      throw new BadRequestException('location.type must be "Point"');
+    }
+    if (data.address?.locationType && data.address.locationType !== 'Point') {
+      throw new BadRequestException('address.locationType must be "Point"');
+    }
+
+    // upload logo / cover / gallery
+    const uploads = await this.handleUploadsForRestaurant(slug, files);
+
+    // upload & gắn QR payment vào paymentConfig.*
+    data.paymentConfig = await this.attachPaymentQrUploads(
+      slug,
+      data.paymentConfig,
+      files,
+    );
+
+    const searchTerms = this.buildSearchTerms(data);
+
+    try {
+      const created = await this.restaurantModel.create({
+        ownerId: ownerObjectId,
+        categoryId: data.categoryId
+          ? new Types.ObjectId(data.categoryId)
+          : undefined,
+
+        name: data.name,
+        shortName: data.shortName?.trim(),
+        slug,
+
+        registrationNumber: data.registrationNumber?.trim(),
+        taxCode: data.taxCode?.trim(),
+
+        phone: data.phone?.trim(),
+        website: data.website?.trim(),
+        email: data.email?.trim(),
+
+        logoUrl: uploads.logoPath ?? data.logoUrl?.trim() ?? '',
+        coverImageUrl: uploads.coverPath ?? data.coverImageUrl?.trim() ?? '',
+        gallery: data.gallery,
+
+        address: data.address,
+        location: data.location ?? { type: 'Point', coordinates: undefined },
+
+        cuisine: data.cuisine,
+        priceRange: data.priceRange ?? '',
+        rating: data.rating ?? null,
+        amenities: data.amenities,
+
+        openingHours: data.openingHours,
+
+        metaTitle: data.metaTitle ?? '',
+        metaDescription: data.metaDescription ?? '',
+        keywords: data.keywords,
+        tags: data.tags,
+        searchTerms,
+
+        paymentConfig: data.paymentConfig ?? {},
+        extra: data.extra ?? {},
+        isActive: data.isActive ?? true,
+      });
+
+      const lean = (await created.populate([])).toObject();
+      return await this.expandSignedUrls(lean);
+    } catch (err: any) {
+      if (err?.code === 11000 && err?.keyPattern?.slug) {
+        throw new ConflictException('Slug already exists');
+      }
+      throw err;
+    }
   }
-}
 
   private normalizeUpdateDto(dto: UpdateRestaurantDto & Record<string, any>) {
     const data: any = dto ? { ...dto } : {};
@@ -1479,263 +1479,263 @@ private async attachPaymentQrUploads(
   //   }
   // }
 
-async updateOneWithUploads(
-  id: string,
-  dto: UpdateRestaurantDto & Record<string, any>,
-  requesterId?: string,
-  files?: UploadFiles,
-  flags?: UploadFlags,
-) {
-  if (!Types.ObjectId.isValid(id)) {
-    throw new BadRequestException('Invalid restaurant id');
-  }
-
-  const filter = { _id: new Types.ObjectId(id) };
-
-  const current = await this.restaurantModel.findOne(filter).lean();
-  if (!current) throw new NotFoundException('Restaurant not found');
-
-  // chuẩn hoá dto (parse JSON fields, arrays, openingHours, ...)
-  const data = this.normalizeUpdateDto(dto);
-
-  const update: UpdateQuery<RestaurantDocument> = { $set: {} as any };
-  const $unset: Record<string, ''> = {};
-
-  // ===== slug + effectiveSlug cho path upload =====
-  let effectiveSlug: string =
-    (current.slug ?? '').toString().trim() ||
-    `restaurant-${current._id.toString()}`;
-
-  if (data.slug) {
-    const baseSlug = this.slugify(String(data.slug));
-    const nextSlug = await this.ensureUniqueSlugOnUpdate(
-      String(current._id),
-      baseSlug,
-    );
-    (update.$set as any).slug = nextSlug;
-    effectiveSlug = nextSlug;
-  }
-
-  // ===== simple fields =====
-  const simpleFields: Array<keyof UpdateRestaurantDto> = [
-    'name',
-    'shortName',
-    'registrationNumber',
-    'taxCode',
-    'phone',
-    'website',
-    'email',
-    'cuisine',
-    'priceRange',
-    'rating',
-    'amenities',
-    'openingHours',
-    'metaTitle',
-    'metaDescription',
-    'keywords',
-    'tags',
-    'searchTerms',
-    'extra',
-    'isActive',
-  ];
-
-  for (const f of simpleFields) {
-    if (Object.prototype.hasOwnProperty.call(data, f)) {
-      (update.$set as any)[f] = (data as any)[f];
+  async updateOneWithUploads(
+    id: string,
+    dto: UpdateRestaurantDto & Record<string, any>,
+    requesterId?: string,
+    files?: UploadFiles,
+    flags?: UploadFlags,
+  ) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid restaurant id');
     }
-  }
 
-  // ===== address & location =====
-  if (data.location?.type && data.location.type !== 'Point') {
-    throw new BadRequestException('location.type must be "Point"');
-  }
-  if (data.address?.locationType && data.address.locationType !== 'Point') {
-    throw new BadRequestException('address.locationType must be "Point"');
-  }
+    const filter = { _id: new Types.ObjectId(id) };
 
-  const hasAddressInDto = Object.prototype.hasOwnProperty.call(data, 'address');
-  const hasLocationInDto = Object.prototype.hasOwnProperty.call(
-    data,
-    'location',
-  );
+    const current = await this.restaurantModel.findOne(filter).lean();
+    if (!current) throw new NotFoundException('Restaurant not found');
 
-  const nextAddress = hasAddressInDto ? data.address : current.address;
-  let nextLocation = hasLocationInDto ? data.location : current.location;
+    // chuẩn hoá dto (parse JSON fields, arrays, openingHours, ...)
+    const data = this.normalizeUpdateDto(dto);
 
-  const addrCoords = nextAddress?.coordinates;
-  const locCoords = nextLocation?.coordinates;
+    const update: UpdateQuery<RestaurantDocument> = { $set: {} as any };
+    const $unset: Record<string, ''> = {};
 
-  if (Array.isArray(addrCoords) && addrCoords.length >= 2) {
-    if (!locCoords || !locCoords.length) {
-      nextLocation = {
-        ...(nextLocation ?? {}),
-        type: 'Point',
-        coordinates: addrCoords,
-      };
-    }
-  }
+    // ===== slug + effectiveSlug cho path upload =====
+    let effectiveSlug: string =
+      (current.slug ?? '').toString().trim() ||
+      `restaurant-${current._id.toString()}`;
 
-  if (hasAddressInDto) {
-    (update.$set as any).address = nextAddress;
-  }
-  if (hasLocationInDto || nextLocation !== current.location) {
-    (update.$set as any).location = nextLocation;
-  }
-
-  // ===== flags upload =====
-  const flagsSafe: UploadFlags = {
-    removeLogo: !!flags?.removeLogo,
-    removeCover: !!flags?.removeCover,
-    galleryMode: flags?.galleryMode ?? 'append',
-    galleryRemovePaths: Array.isArray(flags?.galleryRemovePaths)
-      ? flags.galleryRemovePaths
-      : [],
-    removeAllGallery: !!flags?.removeAllGallery,
-  };
-
-  // --- logo ---
-  if (files?.logo?.length) {
-    const up = await this.uploadService.uploadMultipleToGCS(
-      files.logo,
-      `restaurants/${effectiveSlug}/logo`,
-    );
-    (update.$set as any).logoUrl = up.paths?.[0] ?? '';
-  } else if (flagsSafe.removeLogo) {
-    $unset['logoUrl'] = '';
-  } else if (Object.prototype.hasOwnProperty.call(data, 'logoUrl')) {
-    (update.$set as any).logoUrl = data.logoUrl ?? '';
-  }
-
-  // --- cover ---
-  if (files?.cover?.length) {
-    const up = await this.uploadService.uploadMultipleToGCS(
-      files.cover,
-      `restaurants/${effectiveSlug}/cover`,
-    );
-    (update.$set as any).coverImageUrl = up.paths?.[0] ?? '';
-  } else if (flagsSafe.removeCover) {
-    $unset['coverImageUrl'] = '';
-  } else if (Object.prototype.hasOwnProperty.call(data, 'coverImageUrl')) {
-    (update.$set as any).coverImageUrl = data.coverImageUrl ?? '';
-  }
-
-  // --- gallery ---
-  const currentGallery: string[] = Array.isArray(current.gallery)
-    ? current.gallery
-    : [];
-  let nextGallery = [...currentGallery];
-
-  if (flagsSafe.galleryMode === 'remove' || flagsSafe.removeAllGallery) {
-    if (flagsSafe.removeAllGallery) nextGallery = [];
-    else if (flagsSafe.galleryRemovePaths?.length) {
-      const removeSet = new Set(flagsSafe.galleryRemovePaths);
-      nextGallery = nextGallery.filter((p) => !removeSet.has(p));
-    }
-  }
-
-  if (flagsSafe.galleryMode === 'replace') {
-    if (files?.gallery?.length) {
-      const up = await this.uploadService.uploadMultipleToGCS(
-        files.gallery,
-        `restaurants/${effectiveSlug}/gallery`,
+    if (data.slug) {
+      const baseSlug = this.slugify(String(data.slug));
+      const nextSlug = await this.ensureUniqueSlugOnUpdate(
+        String(current._id),
+        baseSlug,
       );
-      nextGallery = up.paths ?? [];
-    } else if (Array.isArray(data.gallery)) {
-      nextGallery = this.uniqStrings(data.gallery);
+      (update.$set as any).slug = nextSlug;
+      effectiveSlug = nextSlug;
     }
-  }
 
-  if (flagsSafe.galleryMode === 'append') {
-    if (files?.gallery?.length) {
-      const up = await this.uploadService.uploadMultipleToGCS(
-        files.gallery,
-        `restaurants/${effectiveSlug}/gallery`,
-      );
-      nextGallery = this.uniqStrings([...nextGallery, ...(up.paths ?? [])]);
+    // ===== simple fields =====
+    const simpleFields: Array<keyof UpdateRestaurantDto> = [
+      'name',
+      'shortName',
+      'registrationNumber',
+      'taxCode',
+      'phone',
+      'website',
+      'email',
+      'cuisine',
+      'priceRange',
+      'rating',
+      'amenities',
+      'openingHours',
+      'metaTitle',
+      'metaDescription',
+      'keywords',
+      'tags',
+      'searchTerms',
+      'extra',
+      'isActive',
+    ];
+
+    for (const f of simpleFields) {
+      if (Object.prototype.hasOwnProperty.call(data, f)) {
+        (update.$set as any)[f] = (data as any)[f];
+      }
     }
-    if (Array.isArray(data.gallery)) {
-      nextGallery = this.uniqStrings([...nextGallery, ...data.gallery]);
+
+    // ===== address & location =====
+    if (data.location?.type && data.location.type !== 'Point') {
+      throw new BadRequestException('location.type must be "Point"');
     }
-    if (flagsSafe.galleryRemovePaths?.length) {
-      const removeSet = new Set(flagsSafe.galleryRemovePaths);
-      nextGallery = nextGallery.filter((p) => !removeSet.has(p));
+    if (data.address?.locationType && data.address.locationType !== 'Point') {
+      throw new BadRequestException('address.locationType must be "Point"');
     }
-  }
 
-  const galleryChanged =
-    nextGallery.length !== currentGallery.length ||
-    nextGallery.some((p, i) => p !== currentGallery[i]);
+    const hasAddressInDto = Object.prototype.hasOwnProperty.call(data, 'address');
+    const hasLocationInDto = Object.prototype.hasOwnProperty.call(
+      data,
+      'location',
+    );
 
-  if (galleryChanged) {
-    (update.$set as any).gallery = nextGallery;
-  }
+    const nextAddress = hasAddressInDto ? data.address : current.address;
+    let nextLocation = hasLocationInDto ? data.location : current.location;
 
-  // ===== paymentConfig + QR =====
-  if ('paymentConfig' in dto) {
-    if (dto.paymentConfig === null) {
-      $unset['paymentConfig'] = '';
-    } else {
-      const normalized = this.normalizePaymentConfigRaw(dto.paymentConfig);
-      const withQr = await this.attachPaymentQrUploads(
-        effectiveSlug,
-        normalized,
-        files,
-      );
-      (update.$set as any).paymentConfig = withQr;
+    const addrCoords = nextAddress?.coordinates;
+    const locCoords = nextLocation?.coordinates;
+
+    if (Array.isArray(addrCoords) && addrCoords.length >= 2) {
+      if (!locCoords || !locCoords.length) {
+        nextLocation = {
+          ...(nextLocation ?? {}),
+          type: 'Point',
+          coordinates: addrCoords,
+        };
+      }
     }
-  }
 
-  // ===== searchTerms auto nếu client không truyền =====
-  const searchTermsProvided = Object.prototype.hasOwnProperty.call(
-    data,
-    'searchTerms',
-  );
+    if (hasAddressInDto) {
+      (update.$set as any).address = nextAddress;
+    }
+    if (hasLocationInDto || nextLocation !== current.location) {
+      (update.$set as any).location = nextLocation;
+    }
 
-  if (!searchTermsProvided) {
-    const temp = {
-      name:
-        (update.$set as any).name !== undefined
-          ? (update.$set as any).name
-          : current.name,
-      shortName:
-        (update.$set as any).shortName !== undefined
-          ? (update.$set as any).shortName
-          : current.shortName,
-      keywords:
-        (update.$set as any).keywords !== undefined
-          ? (update.$set as any).keywords
-          : current.keywords,
-      tags:
-        (update.$set as any).tags !== undefined
-          ? (update.$set as any).tags
-          : current.tags,
-      address: hasAddressInDto ? nextAddress : current.address,
+    // ===== flags upload =====
+    const flagsSafe: UploadFlags = {
+      removeLogo: !!flags?.removeLogo,
+      removeCover: !!flags?.removeCover,
+      galleryMode: flags?.galleryMode ?? 'append',
+      galleryRemovePaths: Array.isArray(flags?.galleryRemovePaths)
+        ? flags.galleryRemovePaths
+        : [],
+      removeAllGallery: !!flags?.removeAllGallery,
     };
-    (update.$set as any).searchTerms = this.buildSearchTerms(temp);
-  }
 
-  // ===== meta =====
-  (update.$set as any).updatedAt = new Date();
-  if (requesterId) {
-    (update.$set as any)['extra.updatedBy'] = requesterId;
-    (update.$set as any)['extra.updatedReason'] = 'owner_update';
-  }
-  if (Object.keys($unset).length > 0) (update as any).$unset = $unset;
-
-  try {
-    const updated = await this.restaurantModel
-      .findOneAndUpdate(filter, update, { new: true, lean: true })
-      .exec();
-    if (!updated) throw new NotFoundException('Restaurant not found');
-
-    return await this.expandSignedUrls(updated);
-  } catch (err: any) {
-    if (err?.code === 11000 && err?.keyPattern?.slug) {
-      throw new ConflictException('Slug already exists');
+    // --- logo ---
+    if (files?.logo?.length) {
+      const up = await this.uploadService.uploadMultipleToGCS(
+        files.logo,
+        `restaurants/${effectiveSlug}/logo`,
+      );
+      (update.$set as any).logoUrl = up.paths?.[0] ?? '';
+    } else if (flagsSafe.removeLogo) {
+      $unset['logoUrl'] = '';
+    } else if (Object.prototype.hasOwnProperty.call(data, 'logoUrl')) {
+      (update.$set as any).logoUrl = data.logoUrl ?? '';
     }
-    throw err;
+
+    // --- cover ---
+    if (files?.cover?.length) {
+      const up = await this.uploadService.uploadMultipleToGCS(
+        files.cover,
+        `restaurants/${effectiveSlug}/cover`,
+      );
+      (update.$set as any).coverImageUrl = up.paths?.[0] ?? '';
+    } else if (flagsSafe.removeCover) {
+      $unset['coverImageUrl'] = '';
+    } else if (Object.prototype.hasOwnProperty.call(data, 'coverImageUrl')) {
+      (update.$set as any).coverImageUrl = data.coverImageUrl ?? '';
+    }
+
+    // --- gallery ---
+    const currentGallery: string[] = Array.isArray(current.gallery)
+      ? current.gallery
+      : [];
+    let nextGallery = [...currentGallery];
+
+    if (flagsSafe.galleryMode === 'remove' || flagsSafe.removeAllGallery) {
+      if (flagsSafe.removeAllGallery) nextGallery = [];
+      else if (flagsSafe.galleryRemovePaths?.length) {
+        const removeSet = new Set(flagsSafe.galleryRemovePaths);
+        nextGallery = nextGallery.filter((p) => !removeSet.has(p));
+      }
+    }
+
+    if (flagsSafe.galleryMode === 'replace') {
+      if (files?.gallery?.length) {
+        const up = await this.uploadService.uploadMultipleToGCS(
+          files.gallery,
+          `restaurants/${effectiveSlug}/gallery`,
+        );
+        nextGallery = up.paths ?? [];
+      } else if (Array.isArray(data.gallery)) {
+        nextGallery = this.uniqStrings(data.gallery);
+      }
+    }
+
+    if (flagsSafe.galleryMode === 'append') {
+      if (files?.gallery?.length) {
+        const up = await this.uploadService.uploadMultipleToGCS(
+          files.gallery,
+          `restaurants/${effectiveSlug}/gallery`,
+        );
+        nextGallery = this.uniqStrings([...nextGallery, ...(up.paths ?? [])]);
+      }
+      if (Array.isArray(data.gallery)) {
+        nextGallery = this.uniqStrings([...nextGallery, ...data.gallery]);
+      }
+      if (flagsSafe.galleryRemovePaths?.length) {
+        const removeSet = new Set(flagsSafe.galleryRemovePaths);
+        nextGallery = nextGallery.filter((p) => !removeSet.has(p));
+      }
+    }
+
+    const galleryChanged =
+      nextGallery.length !== currentGallery.length ||
+      nextGallery.some((p, i) => p !== currentGallery[i]);
+
+    if (galleryChanged) {
+      (update.$set as any).gallery = nextGallery;
+    }
+
+    // ===== paymentConfig + QR =====
+    if ('paymentConfig' in dto) {
+      if (dto.paymentConfig === null) {
+        $unset['paymentConfig'] = '';
+      } else {
+        const normalized = this.normalizePaymentConfigRaw(dto.paymentConfig);
+        const withQr = await this.attachPaymentQrUploads(
+          effectiveSlug,
+          normalized,
+          files,
+        );
+        (update.$set as any).paymentConfig = withQr;
+      }
+    }
+
+    // ===== searchTerms auto nếu client không truyền =====
+    const searchTermsProvided = Object.prototype.hasOwnProperty.call(
+      data,
+      'searchTerms',
+    );
+
+    if (!searchTermsProvided) {
+      const temp = {
+        name:
+          (update.$set as any).name !== undefined
+            ? (update.$set as any).name
+            : current.name,
+        shortName:
+          (update.$set as any).shortName !== undefined
+            ? (update.$set as any).shortName
+            : current.shortName,
+        keywords:
+          (update.$set as any).keywords !== undefined
+            ? (update.$set as any).keywords
+            : current.keywords,
+        tags:
+          (update.$set as any).tags !== undefined
+            ? (update.$set as any).tags
+            : current.tags,
+        address: hasAddressInDto ? nextAddress : current.address,
+      };
+      (update.$set as any).searchTerms = this.buildSearchTerms(temp);
+    }
+
+    // ===== meta =====
+    (update.$set as any).updatedAt = new Date();
+    if (requesterId) {
+      (update.$set as any)['extra.updatedBy'] = requesterId;
+      (update.$set as any)['extra.updatedReason'] = 'owner_update';
+    }
+    if (Object.keys($unset).length > 0) (update as any).$unset = $unset;
+
+    try {
+      const updated = await this.restaurantModel
+        .findOneAndUpdate(filter, update, { new: true, lean: true })
+        .exec();
+      if (!updated) throw new NotFoundException('Restaurant not found');
+
+      return await this.expandSignedUrls(updated);
+    } catch (err: any) {
+      if (err?.code === 11000 && err?.keyPattern?.slug) {
+        throw new ConflictException('Slug already exists');
+      }
+      throw err;
+    }
   }
-}
 
 
 
@@ -1769,120 +1769,179 @@ async updateOneWithUploads(
   }
   // ===== LIST =====
   // ===== LIST =====
-async findMany(q: QueryRestaurantsDto) {
-  const page = Math.max(1, Number(q.page ?? 1));
-  const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
-  const skip = (page - 1) * limit;
+  async findMany(q: QueryRestaurantsDto) {
+    const page = Math.max(1, Number(q.page ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
+    const skip = (page - 1) * limit;
 
-  const tagList = this.parseCsv(q.tags);
-  const cuisineList = this.parseCsv(q.cuisine);
+    const tagList = this.parseCsv(q.tags);
+    const cuisineList = this.parseCsv(q.cuisine);
 
-  const baseFilter: FilterQuery<RestaurantDocument> = {};
+    const baseFilter: FilterQuery<RestaurantDocument> = {};
 
-  // ===== isActive =====
-  if (q.isActive === 'true') baseFilter.isActive = true;
-  if (q.isActive === 'false') baseFilter.isActive = false;
+    // ===== isActive =====
+    if (q.isActive === 'true') baseFilter.isActive = true;
+    if (q.isActive === 'false') baseFilter.isActive = false;
 
-  // ===== owner / category =====
-  if (q.ownerId) baseFilter.ownerId = new Types.ObjectId(q.ownerId);
-  if (q.categoryId) baseFilter.categoryId = new Types.ObjectId(q.categoryId);
+    // ===== owner / category =====
+    if (q.ownerId) baseFilter.ownerId = new Types.ObjectId(q.ownerId);
+    if (q.categoryId) baseFilter.categoryId = new Types.ObjectId(q.categoryId);
 
-  // ===== address filters =====
-  if (q.country) baseFilter['address.country'] = q.country.toUpperCase();
-  if (q.city) baseFilter['address.city'] = q.city;
-  if (q.district) baseFilter['address.district'] = q.district;
-  if (q.ward) baseFilter['address.ward'] = q.ward;
+    // ===== address filters =====
+    if (q.country) baseFilter['address.country'] = q.country.toUpperCase();
+    if (q.city) baseFilter['address.city'] = q.city;
+    if (q.district) baseFilter['address.district'] = q.district;
+    if (q.ward) baseFilter['address.ward'] = q.ward;
 
-  // ===== tags / cuisine =====
-  if (tagList.length) baseFilter.tags = { $all: tagList };
-  if (cuisineList.length) baseFilter.cuisine = { $all: cuisineList };
+    // ===== tags / cuisine =====
+    if (tagList.length) baseFilter.tags = { $all: tagList };
+    if (cuisineList.length) baseFilter.cuisine = { $all: cuisineList };
 
-  // ===== coordinates =====
-  const lat =
-    q.lat !== undefined && q.lat !== null ? Number(q.lat) : undefined;
-  const lng =
-    q.lng !== undefined && q.lng !== null ? Number(q.lng) : undefined;
-  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+    // ===== coordinates =====
+    const lat =
+      q.lat !== undefined && q.lat !== null ? Number(q.lat) : undefined;
+    const lng =
+      q.lng !== undefined && q.lng !== null ? Number(q.lng) : undefined;
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
 
-  const wantDistanceSort = q.sort === 'distance' && hasCoords;
+    const wantDistanceSort = q.sort === 'distance' && hasCoords;
 
-  const textSearch = q.q && q.q.trim() ? q.q.trim() : undefined;
+    const textSearch = q.q && q.q.trim() ? q.q.trim() : undefined;
 
-  // ===== Pipeline build =====
-  const pipeline: any[] = [];
+    // ===== Pipeline build =====
+    const pipeline: any[] = [];
 
-  // 1) GeoNear nếu có tọa độ
-  if (hasCoords) {
-    pipeline.push({
-      $geoNear: {
-        near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
-        distanceField: 'distance',
-        spherical: true,
-        ...(q.radius ? { maxDistance: Number(q.radius) } : {}),
-        query: baseFilter,
+    // 1) GeoNear nếu có tọa độ
+    if (hasCoords) {
+      pipeline.push({
+        $geoNear: {
+          near: { type: 'Point', coordinates: [Number(lng), Number(lat)] },
+          distanceField: 'distance', // mét
+          spherical: true,
+          ...(q.radius ? { maxDistance: Number(q.radius) } : {}),
+          query: baseFilter,
+        },
+      });
+    } else {
+      // 2) Không geoNear → match thường
+      if (Object.keys(baseFilter).length) {
+        pipeline.push({ $match: baseFilter });
+      }
+    }
+
+    // 3) Text search (nếu có q)
+    if (textSearch) {
+      pipeline.push({
+        $match: { $text: { $search: textSearch } },
+      });
+
+      pipeline.push({
+        $addFields: { textScore: { $meta: 'textScore' } },
+      });
+    }
+
+    // 4) Sort
+    const sortObj = this.sortMap(q.sort) || {};
+    if (wantDistanceSort) {
+      pipeline.push({ $sort: { distance: 1 } });
+    } else if (textSearch) {
+      const textSort: Record<string, 1 | -1> = { textScore: -1 };
+      for (const [k, v] of Object.entries(sortObj)) {
+        textSort[k] = v as 1 | -1;
+      }
+      pipeline.push({ $sort: textSort });
+    } else if (Object.keys(sortObj).length) {
+      pipeline.push({ $sort: sortObj });
+    } else {
+      pipeline.push({ $sort: { createdAt: -1 } });
+    }
+
+    // 👉 Lưu pipeline cho total (không có paging, không có lookup)
+    const countPipeline = [...pipeline];
+
+    // 5) Paging
+    pipeline.push({ $skip: skip }, { $limit: limit });
+
+    // 6) Lookup category
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'categories',             // collection Category
+          localField: 'categoryId',
+          foreignField: '_id',
+          as: 'category',
+          pipeline: [
+            { $match: { isActive: true } },
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                slug: 1,
+                description: 1,
+                image: 1,
+                parentId: 1,
+                depth: 1,
+                path: 1,
+                sortIndex: 1,
+              },
+            },
+          ],
+        },
       },
+      {
+        $unwind: {
+          path: '$category',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    );
+
+    const [items, totalAgg] = await Promise.all([
+      this.restaurantModel.aggregate(pipeline).exec(),
+      this.restaurantModel.aggregate([...countPipeline, { $count: 'total' }]).exec(),
+    ]);
+
+    const total = totalAgg[0]?.total ?? 0;
+
+    const withSigned = await Promise.all(
+      items.map((it) => this.expandSignedUrls(it)),
+    );
+
+    const formatted = withSigned.map((r: any) => {
+      // toạ độ cho FE
+      const coordinates = {
+        lat: r.location?.coordinates?.[1] ?? null,
+        lng: r.location?.coordinates?.[0] ?? null,
+      };
+
+      let distanceKm: number | null = null;
+      let distanceText: string | null = null;
+
+      if (typeof r.distance === 'number') {
+        const km = Number((r.distance / 1000).toFixed(2));
+        distanceKm = km;
+        distanceText = `${km.toFixed(2)} km`;
+      }
+
+      return {
+        ...r,
+        coordinates,
+        distanceKm,
+        distanceText,
+        categoryName: r.category?.name ?? null,
+        categorySlug: r.category?.slug ?? null,
+      };
     });
-  } else {
-    // 2) Không geoNear → match thường
-    if (Object.keys(baseFilter).length) {
-      pipeline.push({ $match: baseFilter });
-    }
+
+    return {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      items: formatted,
+    };
   }
 
-  // 3) Text search (nếu có q)
-  if (textSearch) {
-    pipeline.push({
-      $match: { $text: { $search: textSearch } },
-    });
-
-    pipeline.push({
-      $addFields: { textScore: { $meta: 'textScore' } },
-    });
-  }
-
-  // 4) Sort
-  const sortObj = this.sortMap(q.sort) || {};
-  if (wantDistanceSort) {
-    pipeline.push({ $sort: { distance: 1 } });
-  } else if (textSearch) {
-    const textSort: Record<string, 1 | -1> = { textScore: -1 };
-    for (const [k, v] of Object.entries(sortObj)) {
-      textSort[k] = v as 1 | -1;
-    }
-    pipeline.push({ $sort: textSort });
-  } else if (Object.keys(sortObj).length) {
-    pipeline.push({ $sort: sortObj });
-  } else {
-    pipeline.push({ $sort: { createdAt: -1 } });
-  }
-
-  // 👉 Lưu lại pipeline trước khi paging để dùng cho total
-  const countPipeline = [...pipeline];
-
-  // 5) Paging
-  pipeline.push({ $skip: skip }, { $limit: limit });
-
-  const [items, totalAgg] = await Promise.all([
-    this.restaurantModel.aggregate(pipeline).exec(),
-    this.restaurantModel
-      .aggregate([...countPipeline, { $count: 'total' }])
-      .exec(),
-  ]);
-
-  const total = totalAgg[0]?.total ?? 0;
-
-  const withSigned = await Promise.all(
-    items.map((it) => this.expandSignedUrls(it)),
-  );
-
-  return {
-    page,
-    limit,
-    total,
-    pages: Math.ceil(total / limit),
-    items: withSigned,
-  };
-}
 
 
   // ===== DETAIL =====
@@ -1892,11 +1951,58 @@ async findMany(q: QueryRestaurantsDto) {
       ? { _id: new Types.ObjectId(idOrSlug) }
       : { slug: idOrSlug.toLowerCase() };
 
-    const doc = await this.restaurantModel.findOne(filter).lean();
+    const [doc] = await this.restaurantModel
+      .aggregate([
+        { $match: filter },
+        { $limit: 1 },
+        {
+          $lookup: {
+            from: 'categories',
+            localField: 'categoryId',
+            foreignField: '_id',
+            as: 'category',
+            pipeline: [
+              { $match: { isActive: true } },
+              {
+                $project: {
+                  _id: 1,
+                  name: 1,
+                  slug: 1,
+                  description: 1,
+                  image: 1,
+                  parentId: 1,
+                  depth: 1,
+                  path: 1,
+                  sortIndex: 1,
+                },
+              },
+            ],
+          },
+        },
+        {
+          $unwind: {
+            path: '$category',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+      ])
+      .exec();
+
     if (!doc) throw new NotFoundException('Restaurant not found');
 
-    return this.expandSignedUrls(doc);
+    const signed = await this.expandSignedUrls(doc);
+
+    return {
+      ...signed,
+      coordinates: {
+        lat: signed.location?.coordinates?.[1] ?? null,
+        lng: signed.location?.coordinates?.[0] ?? null,
+      },
+      categoryName: signed.category?.name ?? null,
+      categorySlug: signed.category?.slug ?? null,
+    };
   }
+
 
   async findByOwnerId(ownerId: string, q: OwnerRestaurantsQueryDto) {
     const ownerObjId = new Types.ObjectId(ownerId);
@@ -2013,11 +2119,11 @@ async findMany(q: QueryRestaurantsDto) {
     const maxDistance = q.maxDistanceMeters ?? 5000; // 5km default
     const limit = q.limit ?? 20;
 
-    const pipeline: any[] = [
+    const pipeline: PipelineStage[] = [
       {
         $geoNear: {
           near: { type: 'Point', coordinates: [lng, lat] }, // [lng, lat]
-          key: 'location', // ✅ trỏ đúng field có index 2dsphere
+          key: 'location',
           distanceField: 'distanceMeters',
           spherical: true,
           maxDistance,
@@ -2025,7 +2131,6 @@ async findMany(q: QueryRestaurantsDto) {
         },
       },
 
-      // thêm field distanceKm, làm tròn 2 số lẻ
       {
         $addFields: {
           distanceKm: {
@@ -2033,13 +2138,50 @@ async findMany(q: QueryRestaurantsDto) {
           },
         },
       },
+
+      // 🔗 JOIN category theo categoryId
+      {
+        $lookup: {
+          from: 'categories',            // tên collection (Category -> 'categories')
+          localField: 'categoryId',
+          foreignField: '_id',
+          as: 'category',
+          pipeline: [
+            { $match: { isActive: true } },
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                slug: 1,
+                description: 1,
+                image: 1,
+                parentId: 1,
+                depth: 1,
+                path: 1,
+                sortIndex: 1,
+              },
+            },
+          ],
+        },
+      },
+      {
+        $unwind: {
+          path: '$category',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
       {
         $limit: limit,
       },
+
       {
         $project: {
           ownerId: 1,
           categoryId: 1,
+          // 👇 thêm luôn thông tin category cho FE xài
+          category: 1,
+
           name: 1,
           slug: 1,
           logoUrl: 1,
@@ -2069,7 +2211,6 @@ async findMany(q: QueryRestaurantsDto) {
       docs.map((d) => this.expandSignedUrls(d)),
     );
 
-    // chuẩn hoá thêm field cho FE xài map/list cho tiện
     const items = withSigned.map((r) => ({
       ...r,
       coordinates: {
@@ -2078,6 +2219,10 @@ async findMany(q: QueryRestaurantsDto) {
       },
       distanceText:
         r.distanceKm != null ? `${r.distanceKm.toFixed(2)} km` : null,
+
+      // tiện: thêm vài field phẳng cho FE filter/sort
+      categoryName: r.category?.name ?? null,
+      categorySlug: r.category?.slug ?? null,
     }));
 
     return {

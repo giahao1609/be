@@ -64,7 +64,7 @@ export class ReviewController {
   }
 
   // ===== UPDATE =====
-  @Patch(':id')
+  @Post(':id')
   @UseInterceptors(
     FileFieldsInterceptor([{ name: 'images', maxCount: 24 }], {
       storage: memoryStorage(),

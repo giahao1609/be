@@ -61,7 +61,7 @@ export class PreOrderController {
    *  - set paymentEmailSentAt
    *  - gửi email cho user
    */
-  @Patch(':id/request-deposit')
+  @Post(':id/request-deposit')
   // @UseGuards(JwtAuthGuard, RolesGuard) // owner
   async requestDeposit(
     @CurrentUser() currentUser: any,
@@ -77,7 +77,7 @@ export class PreOrderController {
    *  - set status = PAID
    *  - set paidAt, paymentReference,...
    */
-  @Patch(':id/mark-paid')
+  @Post(':id/mark-paid')
   // @UseGuards(JwtAuthGuard, RolesGuard) // owner / system
   async markPaid(
     @CurrentUser() currentUser: any,
@@ -93,7 +93,7 @@ export class PreOrderController {
    * Flow:
    *  - set status = CONFIRMED
    */
-  @Patch(':id/confirm')
+  @Post(':id/confirm')
   // @UseGuards(JwtAuthGuard, RolesGuard) // owner
   async confirm(
     @CurrentUser() currentUser: any,
@@ -109,7 +109,7 @@ export class PreOrderController {
    * (không dùng cho AWAITING_PAYMENT / PAID / CONFIRMED
    * vì đã có route riêng ở trên cho dễ control logic)
    */
-  @Patch(':id/status')
+  @Post(':id/status')
   // @UseGuards(JwtAuthGuard) // tuỳ role
   async updateStatus(
     @CurrentUser() currentUser: any,

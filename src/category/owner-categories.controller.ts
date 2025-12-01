@@ -77,13 +77,13 @@ export class AdminCategoriesController {
   }
 
   // MOVE (đổi parent)
-  @Patch('id/:id/move')
+  @Post('id/:id/move')
   move(@Param('id') id: string, @Body() dto: MoveCategoryDto) {
     return this.service.move(id, dto);
   }
 
   // REORDER (set sortIndex hàng loạt)
-  @Patch('reorder')
+  @Post('reorder')
   reorder(@Body() dto: ReorderDto) {
     return this.service.reorder(dto);
   }

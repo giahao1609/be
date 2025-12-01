@@ -59,7 +59,7 @@ export class OwnerMenuItemsController {
   }
 
   // UPDATE
-  @Patch(':id')
+  @Post(':id')
   @UseInterceptors(
     FileFieldsInterceptor([{ name: 'images', maxCount: 24 }], {
       storage: memoryStorage(),

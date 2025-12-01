@@ -55,7 +55,7 @@ export class OwnerBlogsController {
         return this.blogsService.createForAuthor(currentUser._id, body, files);
     }
 
-    @Patch(':id')
+    @Post(':id')
     @UseInterceptors(
         FileFieldsInterceptor(
             [

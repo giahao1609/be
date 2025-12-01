@@ -29,7 +29,7 @@ export class PreOrderController {
         return this.preOrderService.listForRestaurant(restaurantId);
     }
 
-    @Patch(':id/status')
+    @Post(':id/status')
     // @UseGuards(JwtAuthGuard, RolesGuard) // owner
     async updateStatus(@CurrentUser() currentUser: any, @Param('id') id: string, @Body() dto: UpdatePreOrderStatusDto) {
         return this.preOrderService.updateStatus(id, dto);

@@ -166,7 +166,7 @@ export class OwnerRestaurantsController {
   //   );
   // }
 
-  @Patch(':id')
+  @Post(':id')
   @UseInterceptors(
     FileFieldsInterceptor(
       [

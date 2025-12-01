@@ -221,28 +221,100 @@ export class RestaurantsService {
     return results;
   }
 
+  // private async expandSignedUrls(restaurant: any) {
+  //   const out = { ...restaurant };
+
+  //   const signed = async (p?: string | null) =>
+  //     p ? (await this.uploadService.getSignedUrl(p)).url : null;
+
+  //   out.logoUrlSigned = await signed(restaurant.logoUrl);
+  //   out.coverImageUrlSigned = await signed(restaurant.coverImageUrl);
+
+  //   if (Array.isArray(restaurant.gallery) && restaurant.gallery.length) {
+  //     out.gallerySigned = await Promise.all(
+  //       restaurant.gallery.map(async (p: string) => ({
+  //         path: p,
+  //         url: await signed(p),
+  //       })),
+  //     );
+  //   } else {
+  //     out.gallerySigned = [];
+  //   }
+
+  //   return out;
+  // }
+
   private async expandSignedUrls(restaurant: any) {
-    const out = { ...restaurant };
+  if (!restaurant) return restaurant;
 
-    const signed = async (p?: string | null) =>
-      p ? (await this.uploadService.getSignedUrl(p)).url : null;
+  const r = { ...restaurant };
 
-    out.logoUrlSigned = await signed(restaurant.logoUrl);
-    out.coverImageUrlSigned = await signed(restaurant.coverImageUrl);
-
-    if (Array.isArray(restaurant.gallery) && restaurant.gallery.length) {
-      out.gallerySigned = await Promise.all(
-        restaurant.gallery.map(async (p: string) => ({
-          path: p,
-          url: await signed(p),
-        })),
-      );
-    } else {
-      out.gallerySigned = [];
-    }
-
-    return out;
+  // ==== logo / cover / gallery như cũ ====
+  if (r.logoUrl) {
+    r.logoUrlSigned = await this.uploadService.getSignedUrl(r.logoUrl);
+  } else {
+    r.logoUrlSigned = null;
   }
+
+  if (r.coverImageUrl) {
+    r.coverImageUrlSigned = await this.uploadService.getSignedUrl(r.coverImageUrl);
+  } else {
+    r.coverImageUrlSigned = null;
+  }
+
+  if (Array.isArray(r.gallery)) {
+    r.gallerySigned = await Promise.all(
+      r.gallery.map((p: string) => this.uploadService.getSignedUrl(p)),
+    );
+  } else {
+    r.gallerySigned = [];
+  }
+
+  // ==== BANK TRANSFER QR ====
+  if (r.paymentConfig?.bankTransfers?.length) {
+    r.paymentConfig = { ...r.paymentConfig };
+    r.paymentConfig.bankTransfers = await Promise.all(
+      r.paymentConfig.bankTransfers.map(async (b: any) => {
+        const bank = { ...b };
+
+        if (bank.qr?.imageUrl) {
+          bank.qr = {
+            ...bank.qr,
+            imageUrlSigned: await this.uploadService.getSignedUrl(
+              bank.qr.imageUrl,
+            ),
+          };
+        }
+
+        return bank;
+      }),
+    );
+  }
+
+  // ==== EWALLET QR ====
+  if (r.paymentConfig?.eWallets?.length) {
+    r.paymentConfig = { ...(r.paymentConfig ?? {}) };
+    r.paymentConfig.eWallets = await Promise.all(
+      r.paymentConfig.eWallets.map(async (w: any) => {
+        const wallet = { ...w };
+
+        if (wallet.qr?.imageUrl) {
+          wallet.qr = {
+            ...wallet.qr,
+            imageUrlSigned: await this.uploadService.getSignedUrl(
+              wallet.qr.imageUrl,
+            ),
+          };
+        }
+
+        return wallet;
+      }),
+    );
+  }
+
+  return r;
+}
+
 
   private normalizePaymentConfigRaw(raw: any) {
   if (!raw) return {};
@@ -290,58 +362,83 @@ export class RestaurantsService {
  */
 private async attachPaymentQrUploads(
   slug: string,
-  paymentConfig: any,
+  paymentConfig: any | undefined,
   files?: UploadFiles,
-) {
+): Promise<any | undefined> {
   if (!files) return paymentConfig;
 
-  if (!paymentConfig) paymentConfig = {};
-  if (!Array.isArray(paymentConfig.bankTransfers)) {
-    paymentConfig.bankTransfers = [];
-  }
-  if (!Array.isArray(paymentConfig.ewallets)) {
-    paymentConfig.ewallets = [];
-  }
+  // Chuẩn hoá paymentConfig về đúng shape
+  const config: any = {
+    ...(paymentConfig ?? {}),
+    bankTransfers: paymentConfig?.bankTransfers?.map((b) => ({
+      ...b,
+      qr: b.qr ?? {},
+    })) ?? [],
+    eWallets: paymentConfig?.eWallets?.map((w) => ({
+      ...w,
+      qr: w.qr ?? {},
+    })) ?? [],
+  };
 
-  // === BANK QRs ===
+  // ===== BANK QRs =====
   if (files.bankQrs?.length) {
     const up = await this.uploadService.uploadMultipleToGCS(
       files.bankQrs,
       `restaurants/${slug}/payment/bank`,
     );
+
     const paths = up.paths ?? [];
 
-    paths.forEach((p, idx) => {
-      if (paymentConfig.bankTransfers[idx]) {
-        paymentConfig.bankTransfers[idx].qrImagePath = p;
+    paths.forEach((path, idx) => {
+      // nếu đã có bankTransfers[idx] thì gắn qr.imageUrl vào
+      if (config.bankTransfers[idx]) {
+        config.bankTransfers[idx].qr = {
+          ...(config.bankTransfers[idx].qr ?? {}),
+          imageUrl: path,
+        };
       } else {
-        paymentConfig.bankTransfers.push({
-          qrImagePath: p,
+        // nếu FE chỉ upload QR mà chưa gửi thông tin bank, vẫn lưu được
+        config.bankTransfers.push({
+          bankCode: undefined,
+          bankName: undefined,
+          accountName: undefined,
+          accountNumber: undefined,
+          branch: undefined,
+          qr: { imageUrl: path },
         });
       }
     });
   }
 
-  // === EWALLET QRs ===
+  // ===== EWALLET QRs =====
   if (files.ewalletQrs?.length) {
     const up = await this.uploadService.uploadMultipleToGCS(
       files.ewalletQrs,
       `restaurants/${slug}/payment/ewallet`,
     );
+
     const paths = up.paths ?? [];
 
-    paths.forEach((p, idx) => {
-      if (paymentConfig.ewallets[idx]) {
-        paymentConfig.ewallets[idx].qrImagePath = p;
+    paths.forEach((path, idx) => {
+      if (config.eWallets[idx]) {
+        config.eWallets[idx].qr = {
+          ...(config.eWallets[idx].qr ?? {}),
+          imageUrl: path,
+        };
       } else {
-        paymentConfig.ewallets.push({
-          qrImagePath: p,
+        config.eWallets.push({
+          provider: 'MOMO',
+          displayName: undefined,
+          phoneNumber: undefined,
+          accountId: undefined,
+          note: undefined,
+          qr: { imageUrl: path },
         });
       }
     });
   }
 
-  return paymentConfig;
+  return config;
 }
 
 
@@ -1682,25 +1779,25 @@ async findMany(q: QueryRestaurantsDto) {
 
   const baseFilter: FilterQuery<RestaurantDocument> = {};
 
-  // isActive filter
+  // ===== isActive =====
   if (q.isActive === 'true') baseFilter.isActive = true;
   if (q.isActive === 'false') baseFilter.isActive = false;
 
-  // owner / category
+  // ===== owner / category =====
   if (q.ownerId) baseFilter.ownerId = new Types.ObjectId(q.ownerId);
   if (q.categoryId) baseFilter.categoryId = new Types.ObjectId(q.categoryId);
 
-  // address filters
+  // ===== address filters =====
   if (q.country) baseFilter['address.country'] = q.country.toUpperCase();
   if (q.city) baseFilter['address.city'] = q.city;
   if (q.district) baseFilter['address.district'] = q.district;
   if (q.ward) baseFilter['address.ward'] = q.ward;
 
-  // tags / cuisine
+  // ===== tags / cuisine =====
   if (tagList.length) baseFilter.tags = { $all: tagList };
   if (cuisineList.length) baseFilter.cuisine = { $all: cuisineList };
 
-  // toạ độ (ép Number cho chắc)
+  // ===== coordinates =====
   const lat =
     q.lat !== undefined && q.lat !== null ? Number(q.lat) : undefined;
   const lng =
@@ -1711,10 +1808,10 @@ async findMany(q: QueryRestaurantsDto) {
 
   const textSearch = q.q && q.q.trim() ? q.q.trim() : undefined;
 
-  // ===== Pipeline =====
+  // ===== Pipeline build =====
   const pipeline: any[] = [];
 
-  // 1) GeoNear (nếu có toạ độ)
+  // 1) GeoNear nếu có tọa độ
   if (hasCoords) {
     pipeline.push({
       $geoNear: {
@@ -1726,13 +1823,13 @@ async findMany(q: QueryRestaurantsDto) {
       },
     });
   } else {
-    // 2) Không có geoNear → dùng $match bình thường
+    // 2) Không geoNear → match thường
     if (Object.keys(baseFilter).length) {
       pipeline.push({ $match: baseFilter });
     }
   }
 
-  // 3) Text search
+  // 3) Text search (nếu có q)
   if (textSearch) {
     pipeline.push({
       $match: { $text: { $search: textSearch } },
@@ -1748,37 +1845,32 @@ async findMany(q: QueryRestaurantsDto) {
   if (wantDistanceSort) {
     pipeline.push({ $sort: { distance: 1 } });
   } else if (textSearch) {
-    // sort theo textScore + custom sort nếu có
-    const textSort: any = { textScore: -1 };
+    const textSort: Record<string, 1 | -1> = { textScore: -1 };
     for (const [k, v] of Object.entries(sortObj)) {
-      textSort[k] = v;
+      textSort[k] = v as 1 | -1;
     }
     pipeline.push({ $sort: textSort });
   } else if (Object.keys(sortObj).length) {
     pipeline.push({ $sort: sortObj });
   } else {
-    // fallback sort nếu sortMap không trả ra gì
     pipeline.push({ $sort: { createdAt: -1 } });
   }
+
+  // 👉 Lưu lại pipeline trước khi paging để dùng cho total
+  const countPipeline = [...pipeline];
 
   // 5) Paging
   pipeline.push({ $skip: skip }, { $limit: limit });
 
-  // 6) KHÔNG $project → trả full document (cộng thêm distance/textScore nếu có)
-  // Nếu sau này cần loại bỏ field nội bộ thì add $project/$unset riêng.
-
-  // ===== Count total =====
-  const countFilter: any = { ...baseFilter };
-  if (textSearch) {
-    countFilter.$text = { $search: textSearch };
-  }
-
-  const [items, total] = await Promise.all([
+  const [items, totalAgg] = await Promise.all([
     this.restaurantModel.aggregate(pipeline).exec(),
-    this.restaurantModel.countDocuments(countFilter).exec(),
+    this.restaurantModel
+      .aggregate([...countPipeline, { $count: 'total' }])
+      .exec(),
   ]);
 
-  // expand signed URLs (vẫn giữ nguyên shape field, chỉ thay value)
+  const total = totalAgg[0]?.total ?? 0;
+
   const withSigned = await Promise.all(
     items.map((it) => this.expandSignedUrls(it)),
   );

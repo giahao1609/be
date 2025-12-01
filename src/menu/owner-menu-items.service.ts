@@ -65,7 +65,7 @@ export class OwnerMenuItemsService {
   private async expandSignedUrls(doc: any) {
     if (!doc) return doc;
     const signed = async (p?: string | null) =>
-      p ? (await this.uploadService.getSignedUrl(p)).url : null;
+      p ? (await this.uploadService.getSignedUrl(p)) : null;
 
     const out: any = { ...doc };
     if (Array.isArray(doc.images) && doc.images.length) {

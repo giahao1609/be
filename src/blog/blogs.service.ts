@@ -112,7 +112,7 @@ export class BlogsService {
     if (!doc) return doc;
     const out: any = { ...doc };
     const signed = async (p?: string | null) =>
-      p ? (await this.uploadService.getSignedUrl(p)).url : null;
+      p ? (await this.uploadService.getSignedUrl(p)) : null;
 
     out.heroImageUrlSigned = doc.heroImageUrl
       ? await signed(doc.heroImageUrl)

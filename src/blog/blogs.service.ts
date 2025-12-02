@@ -24,7 +24,7 @@ export class BlogsService {
     @InjectModel(BlogPost.name)
     private readonly blogModel: Model<BlogDocument>,
     private readonly uploadService: UploadService,
-  ) {}
+  ) { }
 
   private toObjectId(id: string) {
     return new Types.ObjectId(id);
@@ -524,7 +524,7 @@ export class BlogsService {
     return { success: true };
   }
 
-   async listAllWithPagination(params: QueryBlogsDto & { page: number; limit: number }) {
+  async listAllWithPagination(params: QueryBlogsDto & { page: number; limit: number }) {
     const { page, limit } = params;
 
     const filter: FilterQuery<BlogDocument> = {};
@@ -557,5 +557,23 @@ export class BlogsService {
       limit,
       totalPages,
     };
+  }
+
+  async getOneDetail(id: string,) {
+    const blogId = new Types.ObjectId(id);
+
+
+    const doc = await this.blogModel
+      .findOne({
+        _id: blogId,
+      })
+      .lean()
+      .exec();
+
+    if (!doc) {
+      throw new NotFoundException('Blog not found or not owned by author');
+    }
+
+    return doc;
   }
 }

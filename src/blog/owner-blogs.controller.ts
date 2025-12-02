@@ -117,4 +117,16 @@ export class OwnerBlogsController {
             limit,
         });
     }
+
+    @Get(':id')
+    async getMyBlogDetail(
+        @Param('id') id: string,
+    ) {
+        if (!id) {
+            throw new BadRequestException('Missing blog id');
+        }
+
+
+        return this.blogsService.getOneDetail(id);
+    }
 }

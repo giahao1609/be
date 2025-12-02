@@ -18,6 +18,8 @@ export type UploadFiles = {
   gallery?: Express.Multer.File[];
 };
 
+
+
 @Injectable()
 export class BlogsService {
   constructor(
@@ -25,6 +27,35 @@ export class BlogsService {
     private readonly blogModel: Model<BlogDocument>,
     private readonly uploadService: UploadService,
   ) { }
+
+  private async expandSignedUrls(doc: any) {
+    if (!doc) return doc;
+
+    const out: any = { ...doc };
+
+    const signed = async (p?: string | null) =>
+      p ? (await this.uploadService.getSignedUrl(p)) : null;
+
+    // hero
+    out.heroImageUrlSigned = doc.heroImageUrl
+      ? await signed(doc.heroImageUrl)
+      : null;
+
+    // gallery
+    if (Array.isArray(doc.gallery) && doc.gallery.length) {
+      out.gallerySigned = await Promise.all(
+        doc.gallery.map(async (p: string) => ({
+          path: p,
+          url: await signed(p),
+        })),
+      );
+    } else {
+      out.gallerySigned = [];
+    }
+
+    return out;
+  }
+
 
   private toObjectId(id: string) {
     return new Types.ObjectId(id);
@@ -108,29 +139,6 @@ export class BlogsService {
     return minutes;
   }
 
-  private async expandSignedUrls(doc: any) {
-    if (!doc) return doc;
-    const out: any = { ...doc };
-    const signed = async (p?: string | null) =>
-      p ? (await this.uploadService.getSignedUrl(p)) : null;
-
-    out.heroImageUrlSigned = doc.heroImageUrl
-      ? await signed(doc.heroImageUrl)
-      : null;
-
-    if (Array.isArray(doc.gallery) && doc.gallery.length) {
-      out.gallerySigned = await Promise.all(
-        doc.gallery.map(async (p: string) => ({
-          path: p,
-          url: await signed(p),
-        })),
-      );
-    } else {
-      out.gallerySigned = [];
-    }
-
-    return out;
-  }
 
   // ========= CREATE =========
   async createForAuthor(
@@ -524,7 +532,9 @@ export class BlogsService {
     return { success: true };
   }
 
-  async listAllWithPagination(params: QueryBlogsDto & { page: number; limit: number }) {
+  async listAllWithPagination(
+    params: QueryBlogsDto & { page: number; limit: number },
+  ) {
     const { page, limit } = params;
 
     const filter: FilterQuery<BlogDocument> = {};
@@ -537,7 +547,7 @@ export class BlogsService {
 
     const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
+    const [itemsRaw, total] = await Promise.all([
       this.blogModel
         .find(filter)
         .sort({ createdAt: -1 })
@@ -547,6 +557,10 @@ export class BlogsService {
         .exec(),
       this.blogModel.countDocuments(filter),
     ]);
+
+    const items = await Promise.all(
+      itemsRaw.map((it) => this.expandSignedUrls(it)),
+    );
 
     const totalPages = Math.ceil(total / limit) || 1;
 
@@ -559,14 +573,11 @@ export class BlogsService {
     };
   }
 
-  async getOneDetail(id: string,) {
-    const blogId = new Types.ObjectId(id);
-
+  async getOneDetail(id: string) {
+    const blogId = this.toObjectId(id);
 
     const doc = await this.blogModel
-      .findOne({
-        _id: blogId,
-      })
+      .findOne({ _id: blogId })
       .lean()
       .exec();
 
@@ -574,6 +585,8 @@ export class BlogsService {
       throw new NotFoundException('Blog not found');
     }
 
-    return doc;
+    const withSigned = await this.expandSignedUrls(doc);
+    return withSigned;
   }
+
 }

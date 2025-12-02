@@ -571,7 +571,7 @@ export class BlogsService {
       .exec();
 
     if (!doc) {
-      throw new NotFoundException('Blog not found or not owned by author');
+      throw new NotFoundException('Blog not found');
     }
 
     return doc;

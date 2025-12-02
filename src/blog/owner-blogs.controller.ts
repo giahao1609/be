@@ -125,8 +125,6 @@ export class OwnerBlogsController {
         if (!id) {
             throw new BadRequestException('Missing blog id');
         }
-
-
         return this.blogsService.getOneDetail(id);
     }
 }

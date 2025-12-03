@@ -20,6 +20,7 @@ import { CategoriesModule } from './category/categories.module';
 import { OwnerMenuItemsModule } from './menu/owner-menu-items.module';
 import { OrdersModule } from './order/orders.module';
 import { BlogsModule } from './blog/blogs.module';
+import { AiDatasetModule } from './ai-dataset/ai-dataset.module';
 
 @Module({
   imports: [
@@ -59,7 +60,8 @@ import { BlogsModule } from './blog/blogs.module';
     CategoriesModule,
     OwnerMenuItemsModule,
     OrdersModule,
-    BlogsModule
+    BlogsModule,
+    AiDatasetModule
   ],
 })
 export class AppModule {}

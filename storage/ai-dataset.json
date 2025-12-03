@@ -1,0 +1,440 @@
+{
+  "generatedAt": "2025-12-03T16:06:41.998Z",
+  "version": 1,
+  "restaurants": [
+    {
+      "id": "691826ae8811d5cfe29aaee2",
+      "ownerId": "6911f2d1b5874fdc25b5f0cd",
+      "categoryId": "6733f1a0c9b7c8a1f1e23456",
+      "name": "Test Restaurant",
+      "shortName": "",
+      "slug": "test-restaurant",
+      "registrationNumber": "",
+      "taxCode": "",
+      "phone": "",
+      "website": "",
+      "email": "",
+      "logoUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant/logo/1763190443296_photo_2025-01-24_10-32-19.jpg",
+      "coverImageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant/cover/1763190444524_photo_2025-01-24_10-32-19.jpg",
+      "gallery": [],
+      "address": {
+        "street": "123 Lê Lợi",
+        "ward": "Bến Nghé",
+        "district": "1",
+        "city": "Ho Chi Minh",
+        "country": "VN",
+        "formatted": ""
+      },
+      "location": {
+        "lng": 106.70098,
+        "lat": 10.77653
+      },
+      "cuisine": [],
+      "priceRange": "$$",
+      "rating": null,
+      "amenities": [],
+      "tags": [],
+      "searchTerms": [
+        "test restaurant",
+        "123 lê lợi",
+        "bến nghé",
+        "1",
+        "ho chi minh"
+      ],
+      "paymentConfig": null,
+      "menuItems": [
+        {
+          "id": "691f6c67e6594d0d820cb251",
+          "restaurantId": "691826ae8811d5cfe29aaee2",
+          "categoryId": null,
+          "name": "Phở bò đặc biệt",
+          "slug": "pho-bo-dac-biet",
+          "description": "Tô phở bò tái, nạm, gầu đặc biệt.",
+          "images": [],
+          "tags": [
+            "pho",
+            "noodle",
+            "beef"
+          ],
+          "cuisines": [
+            "vietnamese"
+          ],
+          "itemType": "food",
+          "basePrice": {
+            "currency": "VND",
+            "amount": 45000
+          },
+          "compareAtPrice": {
+            "currency": "VND",
+            "amount": 55000
+          },
+          "variants": [
+            {
+              "code": "SIZE_M",
+              "label": "Tô vừa",
+              "price": {
+                "currency": "VND",
+                "amount": 45000
+              },
+              "compareAtPrice": {
+                "currency": "VND",
+                "amount": 50000
+              },
+              "sku": "PHO-M",
+              "isAvailable": true,
+              "sortIndex": 1
+            },
+            {
+              "code": "SIZE_L",
+              "label": "Tô lớn",
+              "price": {
+                "currency": "VND",
+                "amount": 55000
+              },
+              "compareAtPrice": null,
+              "sku": "PHO-L",
+              "isAvailable": true,
+              "sortIndex": 2
+            }
+          ],
+          "optionGroups": [
+            {
+              "name": "Thêm topping",
+              "minSelect": 0,
+              "maxSelect": 3,
+              "required": false,
+              "options": [
+                {
+                  "name": "Thêm bò",
+                  "priceDelta": {
+                    "currency": "VND",
+                    "amount": 15000
+                  },
+                  "isDefault": false,
+                  "tags": [
+                    "beef",
+                    "extra"
+                  ]
+                },
+                {
+                  "name": "Thêm trứng",
+                  "priceDelta": {
+                    "currency": "VND",
+                    "amount": 8000
+                  },
+                  "isDefault": false,
+                  "tags": [
+                    "egg"
+                  ]
+                }
+              ]
+            }
+          ],
+          "promotions": [
+            {
+              "type": "PERCENT",
+              "value": 10,
+              "minQty": 1,
+              "startAt": null,
+              "endAt": null,
+              "code": "",
+              "label": "Giảm 10% khai trương"
+            }
+          ],
+          "flags": {
+            "vegetarian": false,
+            "vegan": false,
+            "halal": false,
+            "glutenFree": false,
+            "spicyLevel": 1
+          },
+          "isAvailable": true,
+          "sortIndex": 10
+        },
+        {
+          "id": "691f73febfc3fa73a26f39f6",
+          "restaurantId": "691826ae8811d5cfe29aaee2",
+          "categoryId": null,
+          "name": "Trà đào cam sả",
+          "slug": "tra-dao-cam-sa",
+          "description": "Trà đào cam sả mát lạnh.",
+          "images": [
+            "https://storage.googleapis.com/khoaluaniuh/restaurants/691826ae8811d5cfe29aaee2/menu-items/tra-dao-cam-sa/images/1763668989145_z7195718032173_3bad273c5ce1a0d89986429a45423e44.jpg"
+          ],
+          "tags": [
+            "drink",
+            "tea"
+          ],
+          "cuisines": [
+            "vietnamese",
+            "drink"
+          ],
+          "itemType": "drink",
+          "basePrice": {
+            "currency": "VND",
+            "amount": 35000
+          },
+          "compareAtPrice": null,
+          "variants": [],
+          "optionGroups": [],
+          "promotions": [],
+          "flags": {
+            "vegetarian": false,
+            "vegan": false,
+            "halal": false,
+            "glutenFree": false,
+            "spicyLevel": 0
+          },
+          "isAvailable": true,
+          "sortIndex": 5
+        }
+      ],
+      "reviews": [],
+      "reviewStats": {
+        "count": 0,
+        "avgRating": null
+      }
+    },
+    {
+      "id": "692c9851a50ebec67d8f0f29",
+      "ownerId": "6910e113a6bb9b557b33dddc",
+      "categoryId": "6733f1a0c9b7c8a1f1e23456",
+      "name": "Test Restaurant",
+      "shortName": "",
+      "slug": "test-restaurant-1",
+      "registrationNumber": "",
+      "taxCode": "",
+      "phone": "",
+      "website": "",
+      "email": "",
+      "logoUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-1/logo/1764530252878_photo_2025-01-24_10-32-19.jpg",
+      "coverImageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-1/cover/1764530254399_photo_2025-01-24_10-32-19.jpg",
+      "gallery": [],
+      "address": {
+        "street": "123 Lê Lợi",
+        "ward": "Bến Nghé",
+        "district": "1",
+        "city": "Ho Chi Minh",
+        "country": "VN",
+        "formatted": ""
+      },
+      "location": {
+        "lng": 106.70098,
+        "lat": 10.77653
+      },
+      "cuisine": [],
+      "priceRange": "$$",
+      "rating": null,
+      "amenities": [],
+      "tags": [],
+      "searchTerms": [
+        "test restaurant",
+        "123 lê lợi",
+        "bến nghé",
+        "1",
+        "ho chi minh"
+      ],
+      "paymentConfig": {
+        "allowCash": true,
+        "allowBankTransfer": true,
+        "allowEWallet": true,
+        "bankTransfers": [
+          {
+            "bankCode": "",
+            "bankName": "Vietcombank",
+            "accountName": "Nguyen Van A",
+            "accountNumber": "0123456789",
+            "branch": "Chi nhánh HCM",
+            "note": "",
+            "qr": null
+          }
+        ],
+        "eWallets": [],
+        "generalNote": ""
+      },
+      "menuItems": [],
+      "reviews": [],
+      "reviewStats": {
+        "count": 0,
+        "avgRating": null
+      }
+    },
+    {
+      "id": "692c996ca50ebec67d8f0f31",
+      "ownerId": "6910e113a6bb9b557b33dddc",
+      "categoryId": "6733f1a0c9b7c8a1f1e23456",
+      "name": "Test Restaurant",
+      "shortName": "",
+      "slug": "test-restaurant-2",
+      "registrationNumber": "",
+      "taxCode": "",
+      "phone": "",
+      "website": "",
+      "email": "",
+      "logoUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-2/logo/1764532667785_photo_2025-01-24_10-32-19.jpg",
+      "coverImageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-2/cover/1764532668710_photo_2025-01-24_10-32-19.jpg",
+      "gallery": [],
+      "address": {
+        "street": "123 Lê Lợi",
+        "ward": "Bến Nghé",
+        "district": "1",
+        "city": "Ho Chi Minh",
+        "country": "VN",
+        "formatted": ""
+      },
+      "location": {
+        "lng": 106.70098,
+        "lat": 10.77653
+      },
+      "cuisine": [],
+      "priceRange": "\\$\\$",
+      "rating": null,
+      "amenities": [],
+      "tags": [],
+      "searchTerms": [
+        "test restaurant",
+        "123 lê lợi",
+        "bến nghé",
+        "1",
+        "ho chi minh"
+      ],
+      "paymentConfig": {
+        "allowCash": true,
+        "allowBankTransfer": true,
+        "allowEWallet": true,
+        "bankTransfers": [
+          {
+            "bankCode": "",
+            "bankName": "Vietcombank",
+            "accountName": "Nguyen Van A",
+            "accountNumber": "0123456789",
+            "branch": "Chi nhánh HCM",
+            "note": "",
+            "qr": {
+              "imageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-2/payment/bank/1764532669391_photo_2025-01-24_10-32-19.jpg",
+              "rawContent": "",
+              "description": ""
+            }
+          }
+        ],
+        "eWallets": [
+          {
+            "provider": "MOMO",
+            "displayName": "",
+            "phoneNumber": "",
+            "accountId": "",
+            "note": "",
+            "qr": {
+              "imageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-2/payment/ewallet/1764532670062_photo_2025-01-24_10-32-19.jpg",
+              "rawContent": "",
+              "description": ""
+            }
+          }
+        ],
+        "generalNote": ""
+      },
+      "menuItems": [],
+      "reviews": [],
+      "reviewStats": {
+        "count": 0,
+        "avgRating": null
+      }
+    },
+    {
+      "id": "692c9d0eeab81dcd490ddb00",
+      "ownerId": "6910e113a6bb9b557b33dddc",
+      "categoryId": "6733f1a0c9b7c8a1f1e23456",
+      "name": "Test Restaurant",
+      "shortName": "",
+      "slug": "test-restaurant-3",
+      "registrationNumber": "",
+      "taxCode": "",
+      "phone": "",
+      "website": "",
+      "email": "",
+      "logoUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-3/logo/1764531467259_photo_2025-01-24_10-32-19.jpg",
+      "coverImageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-3/cover/1764531468738_photo_2025-01-24_10-32-19.jpg",
+      "gallery": [],
+      "address": {
+        "street": "123 Lê Lợi",
+        "ward": "Bến Nghé",
+        "district": "1",
+        "city": "Ho Chi Minh",
+        "country": "VN",
+        "formatted": ""
+      },
+      "location": {
+        "lng": 106.70098,
+        "lat": 10.77653
+      },
+      "cuisine": [],
+      "priceRange": "$$",
+      "rating": null,
+      "amenities": [],
+      "tags": [],
+      "searchTerms": [
+        "test restaurant",
+        "123 lê lợi",
+        "bến nghé",
+        "1",
+        "ho chi minh"
+      ],
+      "paymentConfig": {
+        "allowCash": true,
+        "allowBankTransfer": true,
+        "allowEWallet": true,
+        "bankTransfers": [
+          {
+            "bankCode": "",
+            "bankName": "Vietcombank",
+            "accountName": "Nguyen Van A",
+            "accountNumber": "0123456789",
+            "branch": "Chi nhánh HCM",
+            "note": "",
+            "qr": {
+              "imageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-3/payment/bank/1764531469422_photo_2025-01-24_10-32-19.jpg",
+              "rawContent": "",
+              "description": ""
+            }
+          }
+        ],
+        "eWallets": [
+          {
+            "provider": "MOMO",
+            "displayName": "",
+            "phoneNumber": "",
+            "accountId": "",
+            "note": "",
+            "qr": {
+              "imageUrl": "https://storage.googleapis.com/khoaluaniuh/restaurants/test-restaurant-3/payment/ewallet/1764531470079_photo_2025-01-24_10-32-19.jpg",
+              "rawContent": "",
+              "description": ""
+            }
+          }
+        ],
+        "generalNote": ""
+      },
+      "menuItems": [],
+      "reviews": [],
+      "reviewStats": {
+        "count": 0,
+        "avgRating": null
+      }
+    }
+  ],
+  "categories": [
+    {
+      "id": "691f61ce1f9669fe626482f6",
+      "name": "Đồ ăn nhanh",
+      "slug": "do-an-nhanh",
+      "description": "Các món fast food, burger, gà rán, pizza...",
+      "image": "https://storage.googleapis.com/khoaluaniuh/https%3A//cdn.example.com/categories/fast-food.png",
+      "parentId": null,
+      "ancestors": [],
+      "depth": 0,
+      "path": "do-an-nhanh",
+      "sortIndex": 10
+    }
+  ],
+  "blogs": []
+}

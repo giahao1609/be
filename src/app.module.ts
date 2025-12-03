@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 
-import { ChatModule } from './chatbot/chat.module';
+// import { ChatModule } from './chatbot/chat.module';
 import { AuthModule } from './auth/auth.module';
 import { UploadModule } from './upload/upload.module';
 import { RestaurantModule } from './restaurants/restaurants.module';
@@ -21,6 +21,7 @@ import { OwnerMenuItemsModule } from './menu/owner-menu-items.module';
 import { OrdersModule } from './order/orders.module';
 import { BlogsModule } from './blog/blogs.module';
 import { AiDatasetModule } from './ai-dataset/ai-dataset.module';
+import { ChatAiModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -49,7 +50,7 @@ import { AiDatasetModule } from './ai-dataset/ai-dataset.module';
 
     RedisModule,
 
-    ChatModule,
+    // ChatModule,
     AuthModule,
     UsersModule,
     UploadModule,
@@ -61,7 +62,8 @@ import { AiDatasetModule } from './ai-dataset/ai-dataset.module';
     OwnerMenuItemsModule,
     OrdersModule,
     BlogsModule,
-    AiDatasetModule
+    AiDatasetModule,
+    ChatAiModule
   ],
 })
 export class AppModule {}

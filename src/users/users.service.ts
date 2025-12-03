@@ -3,10 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model } from 'mongoose';
 import { RoleEnum, User, UserDocument, UserRole } from './schema/user.schema';
 import { QueryUsersDto } from './dto/query-users.dto';
+import * as crypto from 'node:crypto';
+import { hashPassword, verifyPassword } from 'src/utils/passcode';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+  constructor(@InjectModel(User.name) private userModel: Model<User>) { }
 
   async create(data: Partial<User>) {
     const user = new this.userModel(data);
@@ -41,7 +43,7 @@ export class UsersService {
   }
 
 
-   async updateRolesByEmail(email: string, roles: UserRole[], requesterId?: string) {
+  async updateRolesByEmail(email: string, roles: UserRole[], requesterId?: string) {
     if (!Array.isArray(roles) || roles.length === 0) {
       throw new BadRequestException('roles must be a non-empty array');
     }
@@ -52,7 +54,7 @@ export class UsersService {
     }
 
     const updated = await this.userModel.findOneAndUpdate(
-      { email }, 
+      { email },
       {
         $set: {
           roles: uniqueRoles,
@@ -87,7 +89,7 @@ export class UsersService {
 
 
 
-    async findMany(q: QueryUsersDto) {
+  async findMany(q: QueryUsersDto) {
     const page = Math.max(1, Number(q.page ?? 1));
     const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
     const skip = (page - 1) * limit;
@@ -120,7 +122,7 @@ export class UsersService {
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
-        .select('-passwordHash -resetExpires') 
+        .select('-passwordHash -resetExpires')
         .lean()
         .exec(),
       this.userModel.countDocuments(filter).exec(),
@@ -133,5 +135,100 @@ export class UsersService {
       pages: Math.ceil(total / limit),
       items,
     };
+  }
+
+  // ================== UPDATE PROFILE (username, phone, avatar, displayName) ==================
+  async updateProfile(
+    userId: string,
+    payload: {
+      displayName?: string;
+      username?: string;
+      phone?: string;
+      avatarUrl?: string;
+    },
+  ) {
+    const update: any = {};
+
+    if (typeof payload.displayName === 'string') {
+      const name = payload.displayName.trim();
+      if (name) update.displayName = name;
+    }
+
+    if (typeof payload.username === 'string') {
+      const username = payload.username.trim();
+      if (username) {
+        // check username đã được dùng bởi user khác chưa
+        const existed = await this.userModel.findOne({
+          _id: { $ne: userId },
+          username,
+        });
+        if (existed) {
+          throw new BadRequestException('Username already taken');
+        }
+        update.username = username;
+      } else {
+        // nếu gửi rỗng thì coi như không cập nhật/hoặc clear – tuỳ logic
+      }
+    }
+
+    if (typeof payload.phone === 'string') {
+      const phone = payload.phone.trim();
+      if (phone) {
+        update.phone = phone;
+      } else {
+        update.phone = undefined;
+      }
+    }
+
+    if (typeof payload.avatarUrl === 'string') {
+      update.avatarUrl = payload.avatarUrl;
+    }
+
+    if (Object.keys(update).length === 0) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: update },
+        { new: true, select: '-passwordHash -resetExpires' },
+      )
+      .lean()
+      .exec();
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
+  }
+
+ async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.userModel
+      .findById(userId)
+      .exec();
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isMatch = await verifyPassword(currentPassword, user.passwordHash);
+    if (!isMatch) {
+      throw new BadRequestException('Mật khẩu hiện tại không đúng');
+    }
+
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('Mật khẩu mới phải khác mật khẩu hiện tại');
+    }
+
+    user.passwordHash = await hashPassword(newPassword);
+    user.resetExpires = null; // nếu muốn clear token reset
+
+    await user.save();
   }
 }

@@ -544,6 +544,14 @@ export class RestaurantsService {
     const ownerObjectId =
       typeof ownerId === 'string' ? new Types.ObjectId(ownerId) : ownerId;
 
+    const existed = await this.restaurantModel.exists({
+      ownerId: ownerObjectId,
+
+    });
+    if (existed) {
+      throw new ConflictException('Owner already has a restaurant');
+    }
+
     const data = this.normalizeCreateDto(dto);
 
     // parse + chuẩn hoá paymentConfig

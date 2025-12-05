@@ -921,7 +921,7 @@ async findTopDiscounted(query: QueryTopDiscountedDto) {
   const skip = (page - 1) * limit;
   const now = new Date();
 
-  const filter: FilterQuery<MenuItemDocument> = {
+  const match: FilterQuery<MenuItemDocument> = {
     isAvailable: true,
     $or: [
       // có % giảm trực tiếp
@@ -960,48 +960,86 @@ async findTopDiscounted(query: QueryTopDiscountedDto) {
     ],
   };
 
-  const [docs, total] = await Promise.all([
-    this.menuItemModel
-      .find(filter)
-      .sort({
-        // ưu tiên món có discountPercent cao
+  const pipeline: any[] = [
+    { $match: match },
+    // join sang restaurants để lấy ảnh fallback
+    {
+      $lookup: {
+        from: 'restaurants',
+        localField: 'restaurantId',
+        foreignField: '_id',
+        as: 'restaurant',
+      },
+    },
+    { $unwind: { path: '$restaurant', preserveNullAndEmptyArrays: true } },
+    {
+      $sort: {
         discountPercent: -1,
-        // rồi tới món có giá gốc cao hơn nhiều so với giá hiện tại
         'compareAtPrice.amount': -1,
         'basePrice.amount': 1,
         createdAt: -1,
-      })
-      .skip(skip)
-      .limit(limit)
-      .select({
-        name: 1,
-        slug: 1,
-        images: 1,
-        tags: 1,
-        cuisines: 1,
-        basePrice: 1,
-        compareAtPrice: 1,
-        discountPercent: 1,
-        promotions: 1,
-        restaurantId: 1,
-        categoryId: 1,
-      })
-      .lean()
-      .exec(),
-    this.menuItemModel.countDocuments(filter),
-  ]);
+      },
+    },
+    {
+      $facet: {
+        items: [{ $skip: skip }, { $limit: limit }],
+        total: [{ $count: 'count' }],
+      },
+    },
+  ];
 
-  // 🔥 gắn prefix/signed URL cho ảnh món ăn
-  const items = await Promise.all(docs.map((d) => this.expandSignedUrls(d)));
+  const agg = await this.menuItemModel.aggregate(pipeline).exec();
+  const facet = agg[0] || { items: [], total: [] };
+  const total = facet.total[0]?.count ?? 0;
+
+  // map & thêm fallback ảnh từ restaurant nếu món không có images
+  const docsWithFallback = (facet.items as any[]).map((d) => {
+    const images = Array.isArray(d.images) ? d.images : [];
+
+    if ((!images || images.length === 0) && d.restaurant?.coverImageUrl) {
+      return {
+        ...d,
+        images: [d.restaurant.coverImageUrl], // lấy cover của quán làm ảnh món
+      };
+    }
+
+    return d;
+  });
+
+  // 🔥 gắn prefix/signed URL cho ảnh (images → imagesSigned)
+  const items = await Promise.all(
+    docsWithFallback.map((d) => this.expandSignedUrls(d)),
+  );
+
+  // chỉ trả các field cần thiết ra ngoài cho FE
+  const sanitized = items.map((d: any) => ({
+    _id: d._id,
+    restaurantId: d.restaurantId,
+    categoryId: d.categoryId,
+    name: d.name,
+    slug: d.slug,
+    tags: d.tags,
+    cuisines: d.cuisines,
+    basePrice: d.basePrice,
+    compareAtPrice: d.compareAtPrice,
+    discountPercent: d.discountPercent,
+    promotions: d.promotions,
+    images: d.images,            // path gốc
+    imagesSigned: d.imagesSigned, // [{ path, url }]
+    // nếu muốn có thêm info quán:
+    restaurantName: d.restaurant?.name,
+    restaurantSlug: d.restaurant?.slug,
+  }));
 
   return {
-    items,
+    items: sanitized,
     total,
     page,
     limit,
     totalPages: Math.ceil(total / limit),
   };
 }
+
 
 
 async getFeaturedRestaurants(query: QueryFeaturedRestaurantsDto) {

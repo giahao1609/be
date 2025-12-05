@@ -6,6 +6,7 @@ import { OwnerMenuItemsService } from './owner-menu-items.service';
 import { MenuItem, MenuItemSchema } from './schema/menu.schema';
 import { UploadService } from 'src/upload/upload.service';
 import { UploadModule } from 'src/upload/upload.module';
+import { MenuItemsController } from './menu-item.controller';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { UploadModule } from 'src/upload/upload.module';
     ]),
     forwardRef(() => UploadModule),
   ],
-  controllers: [OwnerMenuItemsController],
+  controllers: [OwnerMenuItemsController,MenuItemsController],
   providers: [OwnerMenuItemsService, UploadService],
   exports: [OwnerMenuItemsService],
 })

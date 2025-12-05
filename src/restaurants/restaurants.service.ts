@@ -2387,7 +2387,7 @@ export class RestaurantsService {
   async findNearbyFromFar(q: NearbyRestaurantsQueryDto) {
     const lat = q.lat;
     const lng = q.lng;
-    const maxDistance = q.maxDistanceMeters ?? 5000; // 5km default
+    const maxDistance = q.maxDistanceMeters ?? 10000; // 5km default
     const limit = q.limit ?? 20;
 
     const pipeline: PipelineStage[] = [

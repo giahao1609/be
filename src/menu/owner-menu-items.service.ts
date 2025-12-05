@@ -1155,6 +1155,12 @@ async getFeaturedRestaurants(query: QueryFeaturedRestaurantsDto) {
 
   const rawItems = facet.items.map((g: any) => {
     const r = g.restaurant;
+
+    // 👇 GHÉP ảnh cover + logo vào mảng images
+    const images: string[] = [];
+    if (r.coverImageUrl) images.push(r.coverImageUrl);
+    if (r.logoUrl) images.push(r.logoUrl);
+
     return {
       id: r._id,
       name: r.name,
@@ -1172,10 +1178,13 @@ async getFeaturedRestaurants(query: QueryFeaturedRestaurantsDto) {
       avgPrice: Math.round(g.avgPrice || 0),
       itemCount: g.itemCount,
       discountedItemCount: g.discountedItemCount,
+
+      // 🔥 thêm field images để expandSignedUrls() xử lý
+      images,
     };
   });
 
-  // 🔥 gắn prefix/signed URL cho hình quán (logo, cover)
+  // 🔥 gắn prefix/signed URL cho hình quán (logo, cover) thông qua images → imagesSigned
   const items = await Promise.all(
     rawItems.map((d) => this.expandSignedUrls(d)),
   );
@@ -1188,5 +1197,6 @@ async getFeaturedRestaurants(query: QueryFeaturedRestaurantsDto) {
     totalPages: Math.ceil(total / limit),
   };
 }
+
 
 }

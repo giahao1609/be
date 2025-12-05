@@ -8,9 +8,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, FilterQuery, Types, UpdateQuery } from 'mongoose';
 import { MenuItem, MenuItemDocument } from './schema/menu.schema';
 import { UploadService } from 'src/upload/upload.service';
-import { QueryMenuItemsDto } from './dto/query-menu-items.dto';
+import { QueryFeaturedRestaurantsDto, QueryMenuItemsDto, QueryTopDiscountedDto } from './dto/query-menu-items.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
+import { escapeRegExp } from 'src/utils/function';
 type ImageFlags = {
   imagesMode?: 'append' | 'replace' | 'remove';
   removeAllImages?: boolean;
@@ -910,4 +911,244 @@ export class OwnerMenuItemsService {
 
     return this.expandSignedUrls(doc);
   }
+
+async findTopDiscounted(query: QueryTopDiscountedDto) {
+  const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+  const limit = Math.max(
+    1,
+    Math.min(50, parseInt(query.limit ?? '20', 10) || 20),
+  );
+  const skip = (page - 1) * limit;
+  const now = new Date();
+
+  const filter: FilterQuery<MenuItemDocument> = {
+    isAvailable: true,
+    $or: [
+      // có % giảm trực tiếp
+      { discountPercent: { $gt: 0 } },
+
+      // compareAtPrice > basePrice
+      {
+        $expr: {
+          $gt: ['$compareAtPrice.amount', '$basePrice.amount'],
+        },
+      },
+
+      // có promotion đang hoạt động
+      {
+        promotions: {
+          $elemMatch: {
+            $and: [
+              {
+                $or: [
+                  { startAt: { $exists: false } },
+                  { startAt: null },
+                  { startAt: { $lte: now } },
+                ],
+              },
+              {
+                $or: [
+                  { endAt: { $exists: false } },
+                  { endAt: null },
+                  { endAt: { $gte: now } },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+
+  const [docs, total] = await Promise.all([
+    this.menuItemModel
+      .find(filter)
+      .sort({
+        // ưu tiên món có discountPercent cao
+        discountPercent: -1,
+        // rồi tới món có giá gốc cao hơn nhiều so với giá hiện tại
+        'compareAtPrice.amount': -1,
+        'basePrice.amount': 1,
+        createdAt: -1,
+      })
+      .skip(skip)
+      .limit(limit)
+      .select({
+        name: 1,
+        slug: 1,
+        images: 1,
+        tags: 1,
+        cuisines: 1,
+        basePrice: 1,
+        compareAtPrice: 1,
+        discountPercent: 1,
+        promotions: 1,
+        restaurantId: 1,
+        categoryId: 1,
+      })
+      .lean()
+      .exec(),
+    this.menuItemModel.countDocuments(filter),
+  ]);
+
+  // 🔥 gắn prefix/signed URL cho ảnh món ăn
+  const items = await Promise.all(docs.map((d) => this.expandSignedUrls(d)));
+
+  return {
+    items,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
+
+async getFeaturedRestaurants(query: QueryFeaturedRestaurantsDto) {
+  const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+  const limit = Math.max(
+    1,
+    Math.min(50, parseInt(query.limit ?? '12', 10) || 12),
+  );
+  const skip = (page - 1) * limit;
+
+  const minPrice =
+    query.minPrice !== undefined ? Number(query.minPrice) : undefined;
+  const maxPrice =
+    query.maxPrice !== undefined ? Number(query.maxPrice) : undefined;
+
+  const matchMenu: any = {
+    isAvailable: true,
+  };
+
+  // lọc theo khoảng giá (trên basePrice.amount)
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    matchMenu['basePrice.amount'] = {};
+    if (minPrice !== undefined) matchMenu['basePrice.amount'].$gte = minPrice;
+    if (maxPrice !== undefined) matchMenu['basePrice.amount'].$lte = maxPrice;
+  }
+
+  // search món ăn (tên / mô tả / tags / cuisines)
+  if (query.q) {
+    const q = query.q.trim();
+    const regex = new RegExp(escapeRegExp(q), 'i');
+    matchMenu.$or = [
+      { name: regex },
+      { description: regex },
+      { tags: regex },
+      { cuisines: regex },
+    ];
+  }
+
+  const districtFilter =
+    query.district && query.district.trim()
+      ? new RegExp(`^${escapeRegExp(query.district.trim())}$`, 'i')
+      : null;
+
+  const pipeline: any[] = [
+    { $match: matchMenu },
+    {
+      $lookup: {
+        from: 'restaurants', // collection của Restaurant
+        localField: 'restaurantId',
+        foreignField: '_id',
+        as: 'restaurant',
+      },
+    },
+    { $unwind: '$restaurant' },
+    {
+      $match: {
+        'restaurant.isActive': true,
+        ...(districtFilter
+          ? { 'restaurant.address.district': districtFilter }
+          : {}),
+      },
+    },
+    {
+      $group: {
+        _id: '$restaurant._id',
+        restaurant: { $first: '$restaurant' },
+
+        minPrice: { $min: '$basePrice.amount' },
+        maxPrice: { $max: '$basePrice.amount' },
+        avgPrice: { $avg: '$basePrice.amount' },
+
+        itemCount: { $sum: 1 },
+        discountedItemCount: {
+          $sum: {
+            $cond: [
+              {
+                $or: [
+                  { $gt: ['$discountPercent', 0] },
+                  {
+                    $gt: [
+                      '$compareAtPrice.amount',
+                      '$basePrice.amount',
+                    ],
+                  },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+    {
+      $sort: {
+        // ưu tiên quán rating cao + nhiều món giảm giá
+        'restaurant.rating': -1,
+        discountedItemCount: -1,
+        avgPrice: 1,
+      },
+    },
+    {
+      $facet: {
+        items: [{ $skip: skip }, { $limit: limit }],
+        total: [{ $count: 'count' }],
+      },
+    },
+  ];
+
+  const aggResult = await this.menuItemModel.aggregate(pipeline).exec();
+  const facet = aggResult[0] || { items: [], total: [] };
+  const total = facet.total[0]?.count ?? 0;
+
+  const rawItems = facet.items.map((g: any) => {
+    const r = g.restaurant;
+    return {
+      id: r._id,
+      name: r.name,
+      shortName: r.shortName,
+      slug: r.slug,
+      logoUrl: r.logoUrl,
+      coverImageUrl: r.coverImageUrl,
+      rating: r.rating,
+      district: r.address?.district,
+      city: r.address?.city,
+      cuisine: r.cuisine ?? [],
+      priceRange: r.priceRange ?? '',
+      minPrice: g.minPrice,
+      maxPrice: g.maxPrice,
+      avgPrice: Math.round(g.avgPrice || 0),
+      itemCount: g.itemCount,
+      discountedItemCount: g.discountedItemCount,
+    };
+  });
+
+  // 🔥 gắn prefix/signed URL cho hình quán (logo, cover)
+  const items = await Promise.all(
+    rawItems.map((d) => this.expandSignedUrls(d)),
+  );
+
+  return {
+    items,
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
 }

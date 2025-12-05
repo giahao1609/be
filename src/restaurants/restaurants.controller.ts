@@ -26,11 +26,12 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import {
   OwnerRestaurantsQueryDto,
+  QueryRestaurantsDetailDto,
   QueryRestaurantsDto,
 } from './dto/query-restaurants.dto';
 import { Types } from 'mongoose';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
-import { NearbyRestaurantsQueryDto } from './dto/nearby-restaurants.dto';
+import { NearbyRestaurantsQueryDto, QueryRestaurantsHomeDto } from './dto/nearby-restaurants.dto';
 
 type AuthUser = { sub?: string; id?: string; roles?: string[] };
 export type UploadFiles = {
@@ -49,7 +50,7 @@ export type UploadFiles = {
 @UseFilters(BusinessExceptionFilter)
 // @UseGuards(JwtAuthGuard, RolesGuard)
 export class OwnerRestaurantsController {
-  constructor(private readonly restaurantsService: RestaurantsService) {}
+  constructor(private readonly restaurantsService: RestaurantsService) { }
 
   // @Post()
   // @UseInterceptors(
@@ -200,7 +201,7 @@ export class OwnerRestaurantsController {
       try {
         if (typeof v === 'string') return JSON.parse(v);
         if (Array.isArray(v)) return v;
-      } catch (_) {}
+      } catch (_) { }
       return [];
     };
 
@@ -231,7 +232,7 @@ export class OwnerRestaurantsController {
     return this.restaurantsService.findMany(query);
   }
 
- @Get('detail/:idOrSlug')
+  @Get('detail/:idOrSlug')
   async detail(
     @Param('idOrSlug') idOrSlug: string,
     @Query('lat') lat?: string,
@@ -271,5 +272,30 @@ export class OwnerRestaurantsController {
   @Get('nearby')
   async getNearby(@Query() query: NearbyRestaurantsQueryDto) {
     return this.restaurantsService.findNearby(query);
+  }
+
+  @Get('nearby-far')
+  async getNearbyFromFar(@Query() query: NearbyRestaurantsQueryDto) {
+    return this.restaurantsService.findNearbyFromFar(query);
+  }
+
+  @Get('featured')
+  async getFeatured(@Query() query: QueryRestaurantsHomeDto) {
+    const result = await this.restaurantsService.findManyForListing(query);
+    return {
+      success: true,
+      message: 'Restaurants fetched successfully',
+      data: result,
+    };
+  }
+
+  @Get("query-list")
+  async listQuery(@Query() q: QueryRestaurantsDetailDto) {
+    const data = await this.restaurantsService.findManyWithPaging(q);
+    return {
+      success: true,
+      message: 'Restaurants fetched successfully',
+      data,
+    };
   }
 }

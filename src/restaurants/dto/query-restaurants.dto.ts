@@ -4,6 +4,7 @@ import {
   IsInt,
   IsMongoId,
   IsNumber,
+  IsNumberString,
   IsOptional,
   IsString,
   Min,
@@ -39,4 +40,58 @@ export class QueryRestaurantsDto {
 export class OwnerRestaurantsQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) limit: number = 20;
+}
+
+
+export class QueryRestaurantsDetailDto {
+  // ----- paging -----
+  @IsOptional()
+  @IsNumberString()
+  page?: string;      // default 1
+
+  @IsOptional()
+  @IsNumberString()
+  limit?: string;     // default 20
+
+  // ----- filter basic -----
+  @IsOptional()
+  @IsMongoId()
+  ownerId?: string;
+
+  @IsOptional()
+  @IsMongoId()
+  categoryId?: string;
+
+  // City / district
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  district?: string;
+
+  // khoảng giá: map với trường priceRange (VD: "cheap", "medium", "expensive"...)
+  @IsOptional()
+  @IsString()
+  priceRange?: string;
+
+  // chỉ lấy active / inactive
+  @IsOptional()
+  @IsBooleanString()
+  isActive?: string;
+
+  // full-text search theo tên, formatted address, tags, cuisine, searchTerms
+  @IsOptional()
+  @IsString()
+  q?: string;
+
+  // sort: rating | createdAt | name
+  @IsOptional()
+  @IsString()
+  sortBy?: 'rating' | 'createdAt' | 'name';
+
+  @IsOptional()
+  @IsString()
+  sortDir?: 'asc' | 'desc';
 }

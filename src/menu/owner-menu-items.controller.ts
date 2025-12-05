@@ -20,7 +20,7 @@ import { OwnerMenuItemsService } from './owner-menu-items.service';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Types } from 'mongoose';
-import { QueryMenuItemsDto } from './dto/query-menu-items.dto';
+import { QueryFeaturedRestaurantsDto, QueryMenuItemsDto, QueryTopDiscountedDto } from './dto/query-menu-items.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
@@ -29,7 +29,7 @@ import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 // @Roles('owner', 'admin')
 @Controller('owner/restaurants/:restaurantId/menu-items')
 export class OwnerMenuItemsController {
-  constructor(private readonly service: OwnerMenuItemsService) {}
+  constructor(private readonly service: OwnerMenuItemsService) { }
 
   // owner-menu-items.controller.ts
   @Post()
@@ -86,7 +86,7 @@ export class OwnerMenuItemsController {
       try {
         if (typeof v === 'string') return JSON.parse(v);
         if (Array.isArray(v)) return v;
-      } catch {}
+      } catch { }
       return [];
     };
 
@@ -222,4 +222,24 @@ export class OwnerMenuItemsController {
   //   }
   //   return this.service.findById(id);
   // }
+
+  @Get('top-discounted')
+  async getTopDiscounted(@Query() query: QueryTopDiscountedDto) {
+    const data = await this.service.findTopDiscounted(query);
+    return {
+      success: true,
+      message: 'Top discounted menu items fetched successfully',
+      data,
+    };
+  }
+
+  @Get('featured')
+  async getFeatured(@Query() q: QueryFeaturedRestaurantsDto) {
+    const data = await this.service.getFeaturedRestaurants(q);
+    return {
+      success: true,
+      message: 'Featured restaurants fetched successfully',
+      data,
+    };
+  }
 }

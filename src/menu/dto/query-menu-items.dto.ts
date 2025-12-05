@@ -1,6 +1,6 @@
 // src/menu-items/dto/query-menu-items.dto.ts
 import { Type } from 'class-transformer';
-import { IsArray, IsBooleanString, IsEnum, IsInt, IsMongoId, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsBooleanString, IsEnum, IsInt, IsMongoId, IsNumberString, IsOptional, IsString, Min } from 'class-validator';
 
 export class QueryMenuItemsDto {
   @IsOptional() @IsString() q?: string;
@@ -16,4 +16,44 @@ export class QueryMenuItemsDto {
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) limit: number = 20;
+}
+
+
+export class QueryTopDiscountedDto {
+  @IsOptional()
+  @IsNumberString()
+  page?: string;   // default 1
+
+  @IsOptional()
+  @IsNumberString()
+  limit?: string;  // default 20
+}
+
+export class QueryFeaturedRestaurantsDto {
+  @IsOptional()
+  @IsNumberString()
+  page?: string;   // default 1
+
+  @IsOptional()
+  @IsNumberString()
+  limit?: string;  // default 12
+
+  // Khoảng giá (VND)
+  @IsOptional()
+  @IsNumberString()
+  minPrice?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  maxPrice?: string;
+
+  // Quận/Huyện...
+  @IsOptional()
+  @IsString()
+  district?: string;
+
+  // Món ăn (phở, sushi...)
+  @IsOptional()
+  @IsString()
+  q?: string;
 }

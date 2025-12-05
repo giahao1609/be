@@ -7,16 +7,21 @@ export class Money {
   currency?: string;
 
   @Prop({ type: Number, min: 0, default: 0 })
-  amount!: number; 
+  amount!: number;
 }
 export const MoneySchema = SchemaFactory.createForClass(Money);
 
 @Schema({ _id: false })
 class MenuVariant {
-  @Prop({ trim: true }) code?: string;   
-  @Prop({ trim: true }) label?: string; 
+  @Prop({ trim: true }) code?: string;
+  @Prop({ trim: true }) label?: string;
   @Prop({ type: MoneySchema, required: true }) price!: Money;
-  @Prop({ type: MoneySchema }) compareAtPrice?: Money; 
+  @Prop({ type: MoneySchema }) compareAtPrice?: Money;
+
+  // Nếu muốn giảm giá theo variant riêng thì có thể thêm ở đây:
+  // @Prop({ type: Number, min: 0, max: 100, default: 0 })
+  // discountPercent?: number;
+
   @Prop({ trim: true }) sku?: string;
   @Prop({ type: Boolean, default: true }) isAvailable?: boolean;
   @Prop({ type: Number, default: 0 }) sortIndex?: number;
@@ -47,8 +52,10 @@ export const MenuOptionGroupSchema = SchemaFactory.createForClass(MenuOptionGrou
 class ItemPromotion {
   @Prop({ type: String, enum: ['PERCENT', 'FIXED'], required: true })
   type!: 'PERCENT' | 'FIXED';
+
   @Prop({ type: Number, required: true, min: 0 })
-  value!: number; 
+  value!: number;
+
   @Prop({ type: Number, min: 1, default: 1 }) minQty?: number;
   @Prop({ type: Date }) startAt?: Date;
   @Prop({ type: Date }) endAt?: Date;
@@ -76,13 +83,22 @@ export class MenuItem {
   @Prop({ trim: true }) description?: string;
 
   @Prop({ type: [String], default: [] }) images?: string[];
-  @Prop({ type: [String], default: [] }) tags?: string[];        
-  @Prop({ type: [String], default: [] }) cuisines?: string[];     
-  @Prop({ type: String, enum: ['food', 'drink', 'dessert', 'other'], default: 'food' })
+  @Prop({ type: [String], default: [] }) tags?: string[];
+  @Prop({ type: [String], default: [] }) cuisines?: string[];
+  @Prop({
+    type: String,
+    enum: ['food', 'drink', 'dessert', 'other'],
+    default: 'food',
+  })
   itemType?: 'food' | 'drink' | 'dessert' | 'other';
 
-  @Prop({ type: MoneySchema, required: true }) basePrice!: Money; 
-  @Prop({ type: MoneySchema }) compareAtPrice?: Money;           
+  @Prop({ type: MoneySchema, required: true }) basePrice!: Money;  // giá đang bán
+  @Prop({ type: MoneySchema }) compareAtPrice?: Money;             // giá gốc / trước khuyến mãi
+
+  // 🔥 Field giảm giá đơn giản: % giảm dựa trên compareAtPrice
+  // VD: compareAtPrice = 100k, basePrice = 80k, discountPercent = 20
+  @Prop({ type: Number, min: 0, max: 100, default: 0 })
+  discountPercent?: number;
 
   @Prop({ type: [MenuVariantSchema], default: [] }) variants?: MenuVariant[];
   @Prop({ type: [MenuOptionGroupSchema], default: [] }) optionGroups?: MenuOptionGroup[];
@@ -93,7 +109,7 @@ export class MenuItem {
   @Prop({ type: Boolean, default: false }) halal?: boolean;
   @Prop({ type: Boolean, default: false }) glutenFree?: boolean;
   @Prop({ type: [String], default: [] }) allergens?: string[];
-  @Prop({ type: Number, min: 0, max: 3, default: 0 }) spicyLevel?: number; 
+  @Prop({ type: Number, min: 0, max: 3, default: 0 }) spicyLevel?: number;
 
   @Prop({ type: Boolean, default: true }) isAvailable?: boolean;
   @Prop({ type: Number, default: 0 }) sortIndex?: number;

@@ -22,7 +22,7 @@ export class OwnerMenuItemsService {
     @InjectModel(MenuItem.name)
     private readonly menuItemModel: Model<MenuItemDocument>,
     private readonly uploadService: UploadService,
-  ) {}
+  ) { }
 
   private slugify(s?: string) {
     if (!s) return '';
@@ -176,6 +176,32 @@ export class OwnerMenuItemsService {
       imagePaths = this.uniq(imagePaths);
     }
 
+    // 🔥 TÍNH DISCOUNT PERCENT (nếu cần)
+    let discountPercent: number | undefined =
+      typeof dto.discountPercent === 'number'
+        ? dto.discountPercent
+        : undefined;
+
+    if (
+      (discountPercent === undefined || Number.isNaN(discountPercent)) &&
+      dto.compareAtPrice?.amount != null &&
+      dto.basePrice?.amount != null &&
+      dto.compareAtPrice.amount > 0 &&
+      dto.compareAtPrice.amount >= dto.basePrice.amount
+    ) {
+      const raw =
+        ((dto.compareAtPrice.amount - dto.basePrice.amount) /
+          dto.compareAtPrice.amount) *
+        100;
+      discountPercent = Math.round(raw);
+    }
+
+    // clamp 0–100 nếu có
+    if (typeof discountPercent === 'number') {
+      if (discountPercent < 0) discountPercent = 0;
+      if (discountPercent > 100) discountPercent = 100;
+    }
+
     try {
       const created = await this.menuItemModel.create({
         restaurantId: restObj,
@@ -193,6 +219,7 @@ export class OwnerMenuItemsService {
 
         basePrice: dto.basePrice,
         compareAtPrice: dto.compareAtPrice,
+        discountPercent: discountPercent ?? 0,     // 👈 thêm ở đây
 
         variants: dto.variants ?? [],
         optionGroups: dto.optionGroups ?? [],
@@ -221,7 +248,151 @@ export class OwnerMenuItemsService {
     }
   }
 
+
   // ===== UPDATE WITH UPLOADS =====
+  // async updateWithUploads(
+  //   restaurantId: string,
+  //   id: string,
+  //   dto: UpdateMenuItemDto,
+  //   images: Express.Multer.File[] = [],
+  //   flags?: ImageFlags,
+  // ) {
+  //   const restObj = new Types.ObjectId(restaurantId);
+  //   const filter: FilterQuery<MenuItemDocument> = {
+  //     _id: new Types.ObjectId(id),
+  //     restaurantId: restObj,
+  //   };
+
+  //   const current = await this.menuItemModel.findOne(filter).lean();
+  //   if (!current) throw new NotFoundException('Menu item not found');
+
+  //   const update: UpdateQuery<MenuItemDocument> = { $set: {} as any };
+
+  //   // slug uniqueness (per restaurant)
+  //   if (dto.slug && dto.slug.trim()) {
+  //     const base = this.slugify(dto.slug);
+  //     const ensured = await this.ensureUniqueSlugWithinRestaurant(
+  //       restaurantId,
+  //       base,
+  //       String(current._id),
+  //     );
+  //     (update.$set as any).slug = ensured;
+  //   }
+
+  //   // simple fields
+  //   const simple: (keyof any)[] = [
+  //     'name',
+  //     'description',
+  //     'tags',
+  //     'cuisines',
+  //     'itemType',
+  //     'basePrice',
+  //     'compareAtPrice',
+  //     'variants',
+  //     'optionGroups',
+  //     'promotions',
+  //     'vegetarian',
+  //     'vegan',
+  //     'halal',
+  //     'glutenFree',
+  //     'allergens',
+  //     'spicyLevel',
+  //     'isAvailable',
+  //     'sortIndex',
+  //     'extra',
+  //     'categoryId',
+  //   ];
+  //   for (const f of simple) {
+  //     if (f in dto) (update.$set as any)[f] = (dto as any)[f];
+  //   }
+  //   if (dto.categoryId) {
+  //     (update.$set as any).categoryId = new Types.ObjectId(dto.categoryId);
+  //   }
+
+  //   // images decision
+  //   const flagsSafe: ImageFlags = {
+  //     imagesMode: flags?.imagesMode ?? 'append',
+  //     removeAllImages: !!flags?.removeAllImages,
+  //     imagesRemovePaths: Array.isArray(flags?.imagesRemovePaths)
+  //       ? flags!.imagesRemovePaths!
+  //       : [],
+  //   };
+
+  //   let nextImages = Array.isArray(current.images) ? [...current.images] : [];
+
+  //   // remove
+  //   if (flagsSafe.imagesMode === 'remove' || flagsSafe.removeAllImages) {
+  //     nextImages = flagsSafe.removeAllImages
+  //       ? []
+  //       : nextImages.filter(
+  //           (p) => !new Set(flagsSafe.imagesRemovePaths).has(p),
+  //         );
+  //   }
+
+  //   // replace
+  //   if (flagsSafe.imagesMode === 'replace') {
+  //     if (images.length) {
+  //       const slug =
+  //         (update.$set as any).slug ??
+  //         current.slug ??
+  //         this.slugify(current.name);
+  //       const up = await this.uploadService.uploadMultipleToGCS(
+  //         images,
+  //         `restaurants/${restaurantId}/menu-items/${slug}/images`,
+  //       );
+  //       nextImages = up.paths ?? [];
+  //     } else if (Array.isArray((dto as any).images)) {
+  //       nextImages = (dto as any).images!;
+  //     }
+  //   }
+
+  //   // append
+  //   if (flagsSafe.imagesMode === 'append') {
+  //     if (images.length) {
+  //       const slug =
+  //         (update.$set as any).slug ??
+  //         current.slug ??
+  //         this.slugify(current.name);
+  //       const up = await this.uploadService.uploadMultipleToGCS(
+  //         images,
+  //         `restaurants/${restaurantId}/menu-items/${slug}/images`,
+  //       );
+  //       nextImages = this.uniq([...nextImages, ...(up.paths ?? [])]);
+  //     }
+  //     if (Array.isArray((dto as any).images)) {
+  //       nextImages = this.uniq([
+  //         ...nextImages,
+  //         ...((dto as any).images as string[]),
+  //       ]);
+  //     }
+  //     if (flagsSafe.imagesRemovePaths?.length) {
+  //       const rm = new Set(flagsSafe.imagesRemovePaths);
+  //       nextImages = nextImages.filter((p) => !rm.has(p));
+  //     }
+  //   }
+
+  //   // set if changed
+  //   const changed =
+  //     nextImages.length !== (current.images?.length ?? 0) ||
+  //     nextImages.some((p, i) => p !== current.images?.[i]);
+  //   if (changed) (update.$set as any).images = nextImages;
+
+  //   (update.$set as any).updatedAt = new Date();
+
+  //   try {
+  //     const updated = await this.menuItemModel
+  //       .findOneAndUpdate(filter, update, { new: true, lean: true })
+  //       .exec();
+  //     if (!updated) throw new NotFoundException('Menu item not found');
+
+  //     return this.expandSignedUrls(updated);
+  //   } catch (err: any) {
+  //     if (err?.code === 11000 && err?.keyPattern?.slug) {
+  //       throw new ConflictException('Slug already exists for this restaurant');
+  //     }
+  //     throw err;
+  //   }
+  // }
   async updateWithUploads(
     restaurantId: string,
     id: string,
@@ -238,11 +409,105 @@ export class OwnerMenuItemsService {
     const current = await this.menuItemModel.findOne(filter).lean();
     if (!current) throw new NotFoundException('Menu item not found');
 
+    // ===== normalize theo schema mới (Money, variants, optionGroups) =====
+    const normalizeMoney = (input: any, defaultCurrency = 'VND') => {
+      if (input == null) return undefined;
+
+      if (typeof input === 'number' || typeof input === 'bigint') {
+        return {
+          currency: defaultCurrency.toUpperCase(),
+          amount: Number(input) || 0,
+        };
+      }
+
+      if (typeof input === 'string') {
+        const n = Number(input);
+        if (!Number.isNaN(n)) {
+          return {
+            currency: defaultCurrency.toUpperCase(),
+            amount: n,
+          };
+        }
+        return undefined;
+      }
+
+      if (typeof input === 'object') {
+        const amount = Number(input.amount ?? 0) || 0;
+        const currency =
+          (input.currency?.toString()?.toUpperCase() as string) ||
+          defaultCurrency.toUpperCase();
+        return { currency, amount };
+      }
+
+      return undefined;
+    };
+
+    const dtoNorm: any = { ...dto };
+
+    // basePrice & compareAtPrice -> Money
+    if ('basePrice' in dtoNorm) {
+      dtoNorm.basePrice = normalizeMoney(dtoNorm.basePrice, 'VND');
+    }
+    if ('compareAtPrice' in dtoNorm) {
+      dtoNorm.compareAtPrice = normalizeMoney(
+        dtoNorm.compareAtPrice,
+        dtoNorm.basePrice?.currency || 'VND',
+      );
+    }
+
+    // variants[].price / variants[].compareAtPrice -> Money
+    if (Array.isArray(dtoNorm.variants)) {
+      const baseCurrency = dtoNorm.basePrice?.currency || 'VND';
+      dtoNorm.variants = dtoNorm.variants.map((v: any) => {
+        const vv = { ...v };
+
+        if ('price' in vv) {
+          vv.price = normalizeMoney(vv.price, baseCurrency);
+        } else if (dtoNorm.basePrice) {
+          vv.price = dtoNorm.basePrice;
+        }
+
+        if ('compareAtPrice' in vv) {
+          vv.compareAtPrice = normalizeMoney(
+            vv.compareAtPrice,
+            vv.price?.currency || baseCurrency,
+          );
+        }
+
+        return vv;
+      });
+    }
+
+    // optionGroups[].options[].priceDelta -> Money
+    if (Array.isArray(dtoNorm.optionGroups)) {
+      const baseCurrency =
+        dtoNorm.basePrice?.currency ||
+        dtoNorm.compareAtPrice?.currency ||
+        'VND';
+
+      dtoNorm.optionGroups = dtoNorm.optionGroups.map((og: any) => {
+        const ogg = { ...og };
+        if (Array.isArray(ogg.options)) {
+          ogg.options = ogg.options.map((opt: any) => {
+            const oo = { ...opt };
+            if ('priceDelta' in oo) {
+              oo.priceDelta = normalizeMoney(oo.priceDelta, baseCurrency);
+            } else {
+              oo.priceDelta = normalizeMoney(0, baseCurrency);
+            }
+            return oo;
+          });
+        }
+        return ogg;
+      });
+    }
+    // ===== hết phần normalize =====
+
     const update: UpdateQuery<MenuItemDocument> = { $set: {} as any };
 
     // slug uniqueness (per restaurant)
-    if (dto.slug && dto.slug.trim()) {
-      const base = this.slugify(dto.slug);
+    if (dtoNorm.slug && dtoNorm.slug.trim()) {
+      const base = this.slugify(dtoNorm.slug);
       const ensured = await this.ensureUniqueSlugWithinRestaurant(
         restaurantId,
         base,
@@ -251,7 +516,7 @@ export class OwnerMenuItemsService {
       (update.$set as any).slug = ensured;
     }
 
-    // simple fields
+    // simple fields (giữ nguyên list cũ, nhưng dùng dtoNorm)
     const simple: (keyof any)[] = [
       'name',
       'description',
@@ -273,12 +538,13 @@ export class OwnerMenuItemsService {
       'sortIndex',
       'extra',
       'categoryId',
+      'discountPercent',
     ];
     for (const f of simple) {
-      if (f in dto) (update.$set as any)[f] = (dto as any)[f];
+      if (f in dtoNorm) (update.$set as any)[f] = dtoNorm[f];
     }
-    if (dto.categoryId) {
-      (update.$set as any).categoryId = new Types.ObjectId(dto.categoryId);
+    if (dtoNorm.categoryId) {
+      (update.$set as any).categoryId = new Types.ObjectId(dtoNorm.categoryId);
     }
 
     // images decision
@@ -297,8 +563,8 @@ export class OwnerMenuItemsService {
       nextImages = flagsSafe.removeAllImages
         ? []
         : nextImages.filter(
-            (p) => !new Set(flagsSafe.imagesRemovePaths).has(p),
-          );
+          (p) => !new Set(flagsSafe.imagesRemovePaths).has(p),
+        );
     }
 
     // replace
@@ -313,8 +579,8 @@ export class OwnerMenuItemsService {
           `restaurants/${restaurantId}/menu-items/${slug}/images`,
         );
         nextImages = up.paths ?? [];
-      } else if (Array.isArray((dto as any).images)) {
-        nextImages = (dto as any).images!;
+      } else if (Array.isArray((dtoNorm as any).images)) {
+        nextImages = (dtoNorm as any).images!;
       }
     }
 
@@ -331,10 +597,10 @@ export class OwnerMenuItemsService {
         );
         nextImages = this.uniq([...nextImages, ...(up.paths ?? [])]);
       }
-      if (Array.isArray((dto as any).images)) {
+      if (Array.isArray((dtoNorm as any).images)) {
         nextImages = this.uniq([
           ...nextImages,
-          ...((dto as any).images as string[]),
+          ...((dtoNorm as any).images as string[]),
         ]);
       }
       if (flagsSafe.imagesRemovePaths?.length) {
@@ -365,6 +631,8 @@ export class OwnerMenuItemsService {
       throw err;
     }
   }
+
+
   // ---------- LIST ----------
   async findMany(restaurantId: string, q: QueryMenuItemsDto) {
     const restObj = new Types.ObjectId(restaurantId);

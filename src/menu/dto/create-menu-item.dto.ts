@@ -1,6 +1,7 @@
 // src/menu-items/dto/create-menu-item.dto.ts
 import {
   IsArray, IsBoolean, IsEnum, IsMongoId, IsNumber, IsOptional, IsString,
+  Max,
   Min, ValidateNested
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -167,4 +168,11 @@ export class CreateMenuItemDto {
   // extra: bất kỳ
   @IsOptional()
   extra?: Record<string, any>;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @Transform(({ value }) => toNumber(value))
+  discountPercent?: number;
 }

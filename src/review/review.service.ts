@@ -270,8 +270,25 @@ export class ReviewService {
       .lean()
       .exec();
   }
+  private resolveImageUrl(path?: string | null): string | null {
+    if (!path) return null;
 
-   async getReviewsByRestaurantWithUser(restaurantId: string) {
+    // Nếu đã là http(s) thì trả nguyên
+    if (/^https?:\/\//i.test(path)) {
+      return path;
+    }
+
+    // base URL tuỳ env của bạn
+    const base =
+      'https://storage.googleapis.com/khoaluaniuh';
+
+    // bỏ leading slash nếu có
+    const normalized = path.replace(/^\/+/, '');
+
+    return `${base}/${normalized}`;
+  }
+
+async getReviewsByRestaurantWithUser(restaurantId: string) {
     const restObj = new Types.ObjectId(restaurantId);
 
     // 1. Lấy tất cả review của quán, mới nhất trước
@@ -306,7 +323,7 @@ export class ReviewService {
     if (validUserObjectIds.length) {
       users = await this.userModel
         .find({ _id: { $in: validUserObjectIds } })
-        .select('_id displayName avatarUrl email') // tuỳ chọn thêm
+        .select('_id displayName avatarUrl email')
         .lean()
         .exec();
     }
@@ -316,15 +333,27 @@ export class ReviewService {
       userMap.set(u._id.toString(), u);
     }
 
-    // 4. Map lại kết quả kèm user basic info
+    // 4. Map lại kết quả kèm user basic info + prefix ảnh
     const items = reviews.map((r: any) => {
       const u = userMap.get(r.userId);
+
+      // prefix list ảnh review
+      const images: string[] = Array.isArray(r.images)
+        ? r.images
+            .map((p: string) => this.resolveImageUrl(p))
+            .filter((x): x is string => !!x)
+        : [];
+
+      // prefix avatar nếu cần
+      const avatarUrl = u?.avatarUrl
+        ? this.resolveImageUrl(u.avatarUrl)
+        : null;
 
       return {
         _id: r._id,
         restaurantId: r.restaurantId,
         content: r.content,
-        images: r.images ?? [],
+        images, // <-- giờ là full URL
         rating: r.rating ?? 0,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
@@ -333,7 +362,7 @@ export class ReviewService {
           ? {
               id: u._id.toString(),
               displayName: u.displayName,
-              avatarUrl: u.avatarUrl ?? null,
+              avatarUrl, // luôn là full URL hoặc null
               email: u.email,
             }
           : null,

@@ -26,7 +26,7 @@ export class NearbyRestaurantsQueryDto {
 }
 
 
-export class QueryRestaurantsDto {
+export class QueryRestaurantsHomeDto {
   // phân trang
   @IsOptional()
   @IsNumberString()

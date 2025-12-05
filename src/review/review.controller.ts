@@ -146,11 +146,19 @@ export class ReviewController {
 
   // ===== LIST BY RESTAURANT =====
   // GET /restaurants/:restaurantId/reviews
-  @Get()
+ @Get()
   async getByRestaurant(@Param('restaurantId') restaurantId: string) {
     if (!Types.ObjectId.isValid(restaurantId)) {
       throw new BadRequestException('Invalid restaurantId');
     }
-    return this.reviewService.getReviewsByRestaurant(restaurantId);
+
+    const data =
+      await this.reviewService.getReviewsByRestaurantWithUser(restaurantId);
+
+    return {
+      success: true,
+      message: 'Reviews fetched successfully',
+      data,
+    };
   }
 }

@@ -9,6 +9,7 @@ import {
 import { Review, ReviewDocument } from './schema/review.schema';
 import { Restaurant } from '../restaurants/schema/restaurant.schema';
 import { UploadService } from '../upload/upload.service';
+import { User } from 'src/users/schema/user.schema';
 
 type ImageFlags = {
   imagesMode?: 'append' | 'replace' | 'remove';
@@ -34,6 +35,7 @@ export class ReviewService {
     @InjectModel(Restaurant.name)
     private readonly restaurantModel: Model<Restaurant>,
     private readonly uploadService: UploadService,
+    @InjectModel(User.name) private userModel: Model<User>
   ) {}
 
   // ===== RATING AGGREGATION =====
@@ -267,5 +269,80 @@ export class ReviewService {
       .sort({ createdAt: -1 })
       .lean()
       .exec();
+  }
+
+   async getReviewsByRestaurantWithUser(restaurantId: string) {
+    const restObj = new Types.ObjectId(restaurantId);
+
+    // 1. Lấy tất cả review của quán, mới nhất trước
+    const reviews = await this.reviewModel
+      .find({ restaurantId: restObj })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    if (!reviews.length) {
+      return {
+        items: [],
+        total: 0,
+      };
+    }
+
+    // 2. Lấy danh sách userId duy nhất
+    const userIdSet = new Set<string>();
+    for (const r of reviews) {
+      if (r.userId) userIdSet.add(r.userId);
+    }
+
+    const userIds = Array.from(userIdSet);
+
+    // 3. Convert sang ObjectId (nếu hợp lệ) để query users
+    const validUserObjectIds = userIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    let users: any[] = [];
+
+    if (validUserObjectIds.length) {
+      users = await this.userModel
+        .find({ _id: { $in: validUserObjectIds } })
+        .select('_id displayName avatarUrl email') // tuỳ chọn thêm
+        .lean()
+        .exec();
+    }
+
+    const userMap = new Map<string, any>();
+    for (const u of users) {
+      userMap.set(u._id.toString(), u);
+    }
+
+    // 4. Map lại kết quả kèm user basic info
+    const items = reviews.map((r: any) => {
+      const u = userMap.get(r.userId);
+
+      return {
+        _id: r._id,
+        restaurantId: r.restaurantId,
+        content: r.content,
+        images: r.images ?? [],
+        rating: r.rating ?? 0,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+
+        user: u
+          ? {
+              id: u._id.toString(),
+              displayName: u.displayName,
+              avatarUrl: u.avatarUrl ?? null,
+              email: u.email,
+            }
+          : null,
+      };
+    });
+
+    return {
+      items,
+      total: items.length,
+    };
   }
 }

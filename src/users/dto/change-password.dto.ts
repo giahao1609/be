@@ -6,10 +6,10 @@ export class ChangePasswordDto {
   currentPassword: string; // mật khẩu hiện tại
 
   @IsString()
-  @MinLength(8)
+  @MinLength(6)
   newPassword: string; // mật khẩu mới
 
   @IsString()
-  @MinLength(8)
+  @MinLength(6)
   confirmNewPassword: string; // nhập lại mật khẩu mới
 }

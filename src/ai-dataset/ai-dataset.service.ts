@@ -65,14 +65,9 @@ export class AiDatasetService {
     return values.map((v) => this.mapImageUrl(v)).filter(Boolean);
   }
 
-  private buildRestaurantUrl(
-    slug: string | undefined | null,
-    id: string,
-  ): string {
+  // 👇 GIỜ LINK LUÔN THEO ID, KHÔNG DÙNG SLUG NỮA
+  private buildRestaurantUrl(id: string): string {
     const base = this.restaurantBaseUrl.replace(/\/$/, ''); // bỏ / cuối nếu có
-    if (slug && slug.trim()) {
-      return `${base}/restaurants/${slug.trim()}`;
-    }
     return `${base}/restaurants/${id}`;
   }
 
@@ -193,8 +188,8 @@ export class AiDatasetService {
         registrationNumber: r.registrationNumber ?? '',
         taxCode: r.taxCode ?? '',
 
-        // ✅ link đến trang chi tiết quán
-        detailUrl: this.buildRestaurantUrl(r.slug, rid),
+        // ✅ GIỜ LINK THEO ID
+        detailUrl: this.buildRestaurantUrl(rid),
 
         phone: r.phone ?? '',
         website: r.website ?? '',

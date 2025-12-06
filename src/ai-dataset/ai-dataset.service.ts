@@ -50,7 +50,7 @@ export class AiDatasetService {
 
     // Base URL web của FoodMap, có thể override bằng env
     this.restaurantBaseUrl =
-      process.env.FOODMAP_WEB_BASE_URL || 'https://food-map.online';
+      process.env.FOODMAP_WEB_BASE_URL || 'https://www.food-map.online';
   }
 
   // ========= HELPERS: convert path -> full URL cho mọi ảnh =========
@@ -65,10 +65,10 @@ export class AiDatasetService {
     return values.map((v) => this.mapImageUrl(v)).filter(Boolean);
   }
 
-  // 👇 GIỜ LINK LUÔN THEO ID, KHÔNG DÙNG SLUG NỮA
+  // ✅ Build link đúng route: /categories/restaurants/:id
   private buildRestaurantUrl(id: string): string {
     const base = this.restaurantBaseUrl.replace(/\/$/, ''); // bỏ / cuối nếu có
-    return `${base}/restaurants/${id}`;
+    return `${base}/categories/restaurants/${id}`;
   }
 
   // ========= HELPER: đọc file metadata (Điều khoản + Privacy + credits) =========
@@ -188,7 +188,7 @@ export class AiDatasetService {
         registrationNumber: r.registrationNumber ?? '',
         taxCode: r.taxCode ?? '',
 
-        // ✅ GIỜ LINK THEO ID
+        // ✅ Link chi tiết quán đúng route mới
         detailUrl: this.buildRestaurantUrl(rid),
 
         phone: r.phone ?? '',

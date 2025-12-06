@@ -6,14 +6,16 @@ import { Model } from 'mongoose';
 import * as fs from 'fs';
 import * as path from 'path';
 
-
 import {
   BlogPost,
   BlogDocument,
-} from 'src/blog/schema/blog.schema'; // ông đã comment path
+} from 'src/blog/schema/blog.schema'; // chỉnh path nếu khác
 
 import { UploadService } from 'src/upload/upload.service'; // chỉnh path nếu khác
-import { Restaurant, RestaurantDocument } from 'src/restaurants/schema/restaurant.schema';
+import {
+  Restaurant,
+  RestaurantDocument,
+} from 'src/restaurants/schema/restaurant.schema';
 import { MenuItem, MenuItemDocument } from 'src/menu/schema/menu.schema';
 import { Review, ReviewDocument } from 'src/review/schema/review.schema';
 import { Category, CategoryDocument } from 'src/category/schema/category.schema';
@@ -22,6 +24,8 @@ import { Category, CategoryDocument } from 'src/category/schema/category.schema'
 export class AiDatasetService {
   private readonly logger = new Logger(AiDatasetService.name);
   private readonly datasetPath: string;
+  private readonly legalMetaPath: string;
+  private readonly restaurantBaseUrl: string;
   private lastSnapshot: any | null = null;
 
   constructor(
@@ -38,6 +42,15 @@ export class AiDatasetService {
     private readonly uploadService: UploadService,
   ) {
     this.datasetPath = path.join(process.cwd(), 'storage', 'ai-dataset.json');
+    this.legalMetaPath = path.join(
+      process.cwd(),
+      'storage',
+      'ai-legal-metadata.json',
+    );
+
+    // Base URL web của FoodMap, có thể override bằng env
+    this.restaurantBaseUrl =
+      process.env.FOODMAP_WEB_BASE_URL || 'https://food-map.online';
   }
 
   // ========= HELPERS: convert path -> full URL cho mọi ảnh =========
@@ -50,6 +63,47 @@ export class AiDatasetService {
   private mapImageArray(values?: string[] | null): string[] {
     if (!values || !Array.isArray(values)) return [];
     return values.map((v) => this.mapImageUrl(v)).filter(Boolean);
+  }
+
+  private buildRestaurantUrl(
+    slug: string | undefined | null,
+    id: string,
+  ): string {
+    const base = this.restaurantBaseUrl.replace(/\/$/, ''); // bỏ / cuối nếu có
+    if (slug && slug.trim()) {
+      return `${base}/restaurants/${slug.trim()}`;
+    }
+    return `${base}/restaurants/${id}`;
+  }
+
+  // ========= HELPER: đọc file metadata (Điều khoản + Privacy + credits) =========
+
+  private async loadLegalMetadata(): Promise<any | null> {
+    try {
+      const raw = await fs.promises.readFile(this.legalMetaPath, 'utf8');
+      return JSON.parse(raw);
+    } catch (err: any) {
+      this.logger.warn(
+        `Không đọc được file legal metadata (${this.legalMetaPath}): ${err?.message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Merge core snapshot với legal metadata.
+   * Kết quả sẽ được cache vào this.lastSnapshot.
+   */
+  private async buildFinalDataset(coreSnapshot: any): Promise<any> {
+    const legalMeta = await this.loadLegalMetadata();
+
+    const merged = {
+      ...coreSnapshot,
+      legalMeta: legalMeta ?? null,
+    };
+
+    this.lastSnapshot = merged;
+    return merged;
   }
 
   // ========= CRON: rebuild định kỳ =========
@@ -139,6 +193,9 @@ export class AiDatasetService {
         registrationNumber: r.registrationNumber ?? '',
         taxCode: r.taxCode ?? '',
 
+        // ✅ link đến trang chi tiết quán
+        detailUrl: this.buildRestaurantUrl(r.slug, rid),
+
         phone: r.phone ?? '',
         website: r.website ?? '',
         email: r.email ?? '',
@@ -159,9 +216,7 @@ export class AiDatasetService {
 
         location: (() => {
           const coords =
-            r.location?.coordinates ||
-            r.address?.coordinates ||
-            undefined;
+            r.location?.coordinates || r.address?.coordinates || undefined;
           if (!coords || coords.length < 2) return null;
           return {
             lng: coords[0],
@@ -332,7 +387,7 @@ export class AiDatasetService {
       gallery: this.mapImageArray(b.gallery), // 🖼️
       readingMinutes: b.readingMinutes ?? 3,
       status: b.status,
-      publishedAt: b.publishedAt ,
+      publishedAt: b.publishedAt,
       keywords: b.keywords ?? [],
       searchTerms: b.searchTerms ?? [],
       viewCount: b.viewCount ?? 0,
@@ -348,7 +403,7 @@ export class AiDatasetService {
       blogs: blogsDto,
     };
 
-    // 6. Ghi file JSON
+    // 6. Ghi file JSON core dataset
     await fs.promises.mkdir(path.dirname(this.datasetPath), {
       recursive: true,
     });
@@ -358,21 +413,25 @@ export class AiDatasetService {
       'utf8',
     );
 
-    this.lastSnapshot = snapshot;
-    return snapshot;
+    // 7. Merge với legal metadata và cache
+    return this.buildFinalDataset(snapshot);
   }
 
   // ========= API dùng =========
 
   async getCurrentDataset(): Promise<any> {
+    // Nếu đã có cache merged (core + legalMeta) thì dùng luôn
     if (this.lastSnapshot) return this.lastSnapshot;
 
     try {
+      // Đọc core dataset từ file
       const raw = await fs.promises.readFile(this.datasetPath, 'utf8');
-      this.lastSnapshot = JSON.parse(raw);
-      return this.lastSnapshot;
+      const coreSnapshot = JSON.parse(raw);
+
+      // Gắn thêm legal metadata mỗi lần app khởi động lại
+      return this.buildFinalDataset(coreSnapshot);
     } catch {
-      // chưa có file -> build lần đầu
+      // chưa có file -> build lần đầu (bên trong đã tự merge legalMeta)
       return this.rebuildDataset();
     }
   }

@@ -1869,7 +1869,7 @@ export class RestaurantsService {
     }
 
     // 👉 Lưu pipeline cho total (không có paging, không có lookup)
-    const countPipeline = [...pipeline];
+    const countPipeline = [...pipeline, { isHidden: false }];
 
     // 5) Paging
     pipeline.push({ $skip: skip }, { $limit: limit });

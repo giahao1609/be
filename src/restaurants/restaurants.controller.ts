@@ -300,7 +300,7 @@ export class OwnerRestaurantsController {
   }
 
 
-   @Patch(':id/visibility')
+   @Post(':id/visibility')
   async updateVisibility(
     @Param('id') id: string,
     @Body() body: UpdateRestaurantVisibilityDto,

@@ -538,7 +538,7 @@ export class RestaurantsService {
   //   }
   // }
 
-  async createWithUploads(
+ async createWithUploads(
     dto: CreateRestaurantDto,
     ownerId: string,
     files?: UploadFiles,
@@ -550,12 +550,12 @@ export class RestaurantsService {
 
     const existed = await this.restaurantModel.exists({
       ownerId: ownerObjectId,
-
     });
     if (existed) {
       throw new ConflictException('Owner already has a restaurant');
     }
 
+    // chuẩn hoá dto (parse JSON string -> object, trimming, v.v.)
     const data = this.normalizeCreateDto(dto);
 
     // parse + chuẩn hoá paymentConfig
@@ -580,7 +580,9 @@ export class RestaurantsService {
       throw new BadRequestException('address.locationType must be "Point"');
     }
 
-    // upload logo / cover / gallery
+    // =========================
+    //  Upload logo / cover / gallery
+    // =========================
     const uploads = await this.handleUploadsForRestaurant(slug, files);
 
     // upload & gắn QR payment vào paymentConfig.*
@@ -589,6 +591,13 @@ export class RestaurantsService {
       data.paymentConfig,
       files,
     );
+
+    // ✅ Gắn gallery upload vào data.gallery
+    // nếu FE có gửi sẵn data.gallery (URL cũ) thì merge thêm
+    const galleryFromDto = Array.isArray(data.gallery) ? data.gallery : [];
+    const galleryFromUpload = uploads.galleryPaths ?? [];
+
+    data.gallery = [...galleryFromDto, ...galleryFromUpload];
 
     const searchTerms = this.buildSearchTerms(data);
 
@@ -612,7 +621,9 @@ export class RestaurantsService {
 
         logoUrl: uploads.logoPath ?? data.logoUrl?.trim() ?? '',
         coverImageUrl: uploads.coverPath ?? data.coverImageUrl?.trim() ?? '',
-        gallery: data.gallery,
+
+        // ✅ gallery bây giờ đã có URL sau upload
+        gallery: data.gallery ?? [],
 
         address: data.address,
         location: data.location ?? { type: 'Point', coordinates: undefined },
@@ -644,7 +655,6 @@ export class RestaurantsService {
       throw err;
     }
   }
-
   private normalizeUpdateDto(dto: UpdateRestaurantDto & Record<string, any>) {
     const data: any = dto ? { ...dto } : {};
 

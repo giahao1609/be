@@ -87,12 +87,13 @@ export class OwnerRestaurantsController {
         { name: 'logo', maxCount: 1 },
         { name: 'cover', maxCount: 1 },
         { name: 'gallery', maxCount: 16 },
-
-        // 👇 thêm 2 field cho QR thanh toán
         { name: 'bankQrs', maxCount: 20 },
         { name: 'ewalletQrs', maxCount: 20 },
       ],
-      { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } },
+      {
+        storage: memoryStorage(),
+        limits: { fileSize: 10 * 1024 * 1024 },
+      },
     ),
   )
   async create(
@@ -105,7 +106,7 @@ export class OwnerRestaurantsController {
     }
 
     // CreateRestaurantDto có thể bị FE gửi JSON string cho một số field
-    // phần parse/normalize & upload ảnh/QR đã xử ở service.createWithUploads
+    // phần parse/normalize & upload ảnh/QR xử trong service
     return this.restaurantsService.createWithUploads(
       body as CreateRestaurantDto,
       currentUser._id,
@@ -300,7 +301,7 @@ export class OwnerRestaurantsController {
   }
 
 
-   @Post(':id/visibility')
+  @Post(':id/visibility')
   async updateVisibility(
     @Param('id') id: string,
     @Body() body: UpdateRestaurantVisibilityDto,

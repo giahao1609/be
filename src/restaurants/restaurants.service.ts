@@ -1790,7 +1790,7 @@ export class RestaurantsService {
     const cuisineList = this.parseCsv(q.cuisine);
 
     const baseFilter: FilterQuery<RestaurantDocument> = {};
-
+    baseFilter.isHidden = false;
     // ===== isActive =====
     if (q.isActive === 'true') baseFilter.isActive = true;
     if (q.isActive === 'false') baseFilter.isActive = false;
@@ -1869,7 +1869,7 @@ export class RestaurantsService {
     }
 
     // 👉 Lưu pipeline cho total (không có paging, không có lookup)
-    const countPipeline = [...pipeline, { isHidden: false }];
+    const countPipeline = [...pipeline];
 
     // 5) Paging
     pipeline.push({ $skip: skip }, { $limit: limit });
@@ -2598,7 +2598,7 @@ export class RestaurantsService {
     const skip = (page - 1) * limit;
 
     const filter: FilterQuery<RestaurantDocument> = {};
-
+    filter.isHidden = false;
     // ----- owner / category -----
     if (query.ownerId) {
       filter.ownerId = new Types.ObjectId(query.ownerId);

@@ -538,7 +538,8 @@ export class BlogsService {
     const { page, limit } = params;
 
     const filter: FilterQuery<BlogDocument> = {
-      isHidden: false
+      isHidden: false,
+      status:"PUBLISHED"
     };
     // if (search) {
     //   filter.$or = [

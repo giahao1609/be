@@ -41,6 +41,7 @@ async function bootstrap() {
       const whitelist = [
         'http://localhost:3000',
         'https://food-map.online',
+        'https://www.food-map.online'
       ];
 
       if (!origin || whitelist.includes(origin)) {

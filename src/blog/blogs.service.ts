@@ -537,7 +537,9 @@ export class BlogsService {
   ) {
     const { page, limit } = params;
 
-    const filter: FilterQuery<BlogDocument> = {};
+    const filter: FilterQuery<BlogDocument> = {
+      isHidden: false
+    };
     // if (search) {
     //   filter.$or = [
     //     { title: { $regex: search, $options: 'i' } },
@@ -587,6 +589,28 @@ export class BlogsService {
 
     const withSigned = await this.expandSignedUrls(doc);
     return withSigned;
+  }
+
+
+    async updateHiddenForAuthor(
+    blogId: string,
+    isHidden: boolean,
+  ) {
+    const blog = await this.blogModel.findOneAndUpdate(
+      { _id: blogId },
+      {
+        $set: {
+          isHidden,
+        },
+      },
+      { new: true },
+    );
+
+    if (!blog) {
+      throw new NotFoundException('Blog not found or not owned by current user');
+    }
+
+    return blog;
   }
 
 }

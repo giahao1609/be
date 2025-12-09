@@ -1,6 +1,7 @@
 // src/blog/dto/update-blog.dto.ts
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -73,4 +74,8 @@ export class UpdateBlogDto {
   @IsString({ each: true })
   @IsOptional()
   gallery?: string[];
+}
+export class UpdateBlogHiddenDto {
+  @IsBoolean()
+  isHidden!: boolean;
 }

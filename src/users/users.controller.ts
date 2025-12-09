@@ -8,6 +8,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Post,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 
@@ -45,7 +46,7 @@ export class UsersController {
     return safe;
   }
 
-  @Patch('me/profile')
+  @Post('me/profile')
   @UseInterceptors(FileInterceptor('avatar'))
   async updateMyProfile(
     @CurrentUser() currentUser: any,
@@ -71,7 +72,7 @@ export class UsersController {
   }
 
   // ===== ĐỔI MẬT KHẨU CỦA CHÍNH MÌNH =====
-  @Patch('me/password')
+  @Post('me/password')
   async changeMyPassword(
     @CurrentUser() currentUser: any,
     @Body() body: ChangePasswordDto,

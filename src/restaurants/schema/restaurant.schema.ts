@@ -185,6 +185,9 @@ export class Restaurant {
   extra?: Record<string, any>;
 
   @Prop({ default: true }) isActive?: boolean;
+
+  @Prop({ required: false, default: false })
+  isHidden: boolean;
 }
 
 export const RestaurantSchema = SchemaFactory.createForClass(Restaurant);

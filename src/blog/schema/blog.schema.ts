@@ -90,6 +90,9 @@ export class BlogPost {
   @Prop({ type: Boolean, default: false })
   isFeatured?: boolean;
 
+  @Prop({ required: false, default: false })
+  isHidden: boolean;
+
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
   extra?: Record<string, any>;
 }

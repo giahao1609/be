@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 
 import { RestaurantsService } from './restaurants.service';
-import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+import { UpdateRestaurantDto, UpdateRestaurantVisibilityDto } from './dto/update-restaurant.dto';
 import type { Request } from 'express';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
@@ -297,5 +297,30 @@ export class OwnerRestaurantsController {
       message: 'Restaurants fetched successfully',
       data,
     };
+  }
+
+
+   @Patch(':id/visibility')
+  async updateVisibility(
+    @Param('id') id: string,
+    @Body() body: UpdateRestaurantVisibilityDto,
+    @CurrentUser() currentUser: any,
+  ) {
+    if (!id) {
+      throw new BadRequestException('Missing restaurant id');
+    }
+
+    if (!currentUser || !currentUser._id) {
+      throw new BadRequestException('Current user is required');
+    }
+
+    const { isVisible } = body;
+    const isHidden = !isVisible; // FE gửi isVisible, DB lưu isHidden
+
+    return this.restaurantsService.updateVisibility(id, {
+      isHidden,
+      actorId: currentUser._id,
+      roles: currentUser.roles ?? [],
+    });
   }
 }

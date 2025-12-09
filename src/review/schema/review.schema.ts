@@ -25,6 +25,9 @@ export class Review {
 
   @Prop({ type: Number, default: 0, min: 0, max: 5 })
   rating!: number;
+ 
+  @Prop({ required: false, default: false })
+  isHidden: boolean;
 }
 
 export const ReviewSchema = SchemaFactory.createForClass(Review);

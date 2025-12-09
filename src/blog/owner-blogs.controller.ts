@@ -20,7 +20,7 @@ import { memoryStorage } from 'multer';
 import { BlogsService } from './blogs.service';
 import type { UploadFiles } from './blogs.service';
 import { CreateBlogDto } from './dto/create-blog.dto';
-import { UpdateBlogDto } from './dto/update-blog.dto';
+import { UpdateBlogDto, UpdateBlogHiddenDto } from './dto/update-blog.dto';
 import { QueryBlogsAllDto, QueryBlogsDto } from './dto/query-blog.dto';
 import { BusinessExceptionFilter } from 'src/filters/business-exception.filter';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
@@ -126,5 +126,24 @@ export class OwnerBlogsController {
             throw new BadRequestException('Missing blog id');
         }
         return this.blogsService.getOneDetail(id);
+    }
+
+    @Post(':id/hidden')
+    async updateHiddenStatus(
+        @Param('id') id: string,
+        @Body() body: UpdateBlogHiddenDto,
+        @CurrentUser() currentUser: any,
+    ) {
+        if (!id) {
+            throw new BadRequestException('Missing blog id');
+        }
+        if (!currentUser || !currentUser._id) {
+            throw new BadRequestException('Current user is required');
+        }
+
+        return this.blogsService.updateHiddenForAuthor(
+            id,
+            currentUser._id,
+        );
     }
 }

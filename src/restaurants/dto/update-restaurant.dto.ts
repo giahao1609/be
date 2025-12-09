@@ -79,3 +79,9 @@ export class UpdateRestaurantDto {
   @IsOptional() extra?: Record<string, any>;
   @IsOptional() @Type(() => Boolean) isActive?: boolean;
 }
+
+
+export class UpdateRestaurantVisibilityDto {
+  @IsBoolean()
+  isVisible!: boolean;
+}

@@ -2509,198 +2509,231 @@ export class RestaurantsService {
       items,
     };
   }
-async findManyForListing(query: QueryRestaurantsHomeDto) {
-  const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
-  const limit = Math.max(
-    1,
-    Math.min(50, parseInt(query.limit ?? '12', 10) || 12),
-  );
+  async findManyForListing(query: QueryRestaurantsHomeDto) {
+    const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+    const limit = Math.max(
+      1,
+      Math.min(50, parseInt(query.limit ?? '12', 10) || 12),
+    );
 
-  const filter: FilterQuery<RestaurantDocument> = {
-    isActive: true,
-    // nếu bạn có flag quán nổi bật thì thêm:
-    // tags: { $in: ['featured'] },
-  };
+    const filter: FilterQuery<RestaurantDocument> = {
+      isActive: true,
+      // nếu bạn có flag quán nổi bật thì thêm:
+      // tags: { $in: ['featured'] },
+    };
 
-  // ----- lọc theo khoảng giá (khoảng giá) -----
-  if (query.priceRange) {
-    filter.priceRange = query.priceRange.trim();
-  }
+    // ----- lọc theo khoảng giá (khoảng giá) -----
+    if (query.priceRange) {
+      filter.priceRange = query.priceRange.trim();
+    }
 
-  // ----- lọc theo quận/huyện -----
-  if (query.district) {
-    const district = query.district.trim();
-    // so sánh không phân biệt hoa thường
-    filter['address.district'] = {
-      $regex: new RegExp(`^${escapeRegExp(district)}$`, 'i'),
+    // ----- lọc theo quận/huyện -----
+    if (query.district) {
+      const district = query.district.trim();
+      // so sánh không phân biệt hoa thường
+      filter['address.district'] = {
+        $regex: new RegExp(`^${escapeRegExp(district)}$`, 'i'),
+      };
+    }
+
+    // ----- search theo món ăn / keyword -----
+    if (query.q) {
+      const q = query.q.trim();
+
+      filter.$or = [
+        { name: { $regex: q, $options: 'i' } },
+        { cuisine: { $regex: q, $options: 'i' } },
+        { tags: { $regex: q, $options: 'i' } },
+        { 'address.formatted': { $regex: q, $options: 'i' } },
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [docs, total] = await Promise.all([
+      this.restaurantModel
+        .find(filter)
+        // ưu tiên quán rating cao + mới
+        .sort({ rating: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        // chỉ select những field cần cho card list
+        .select({
+          name: 1,
+          shortName: 1,
+          slug: 1,
+          logoUrl: 1,
+          coverImageUrl: 1,
+          priceRange: 1,
+          rating: 1,
+          cuisine: 1,
+          tags: 1,
+          'address.district': 1,
+          'address.city': 1,
+        })
+        .lean()
+        .exec(),
+      this.restaurantModel.countDocuments(filter),
+    ]);
+
+    // 🔥 thêm prefix / signed URL cho hình ảnh
+    const items = await Promise.all(
+      docs.map((d) => this.expandSignedUrls(d)),
+    );
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
+  async findManyWithPaging(query: QueryRestaurantsDetailDto) {
+    const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+    const limit = Math.max(
+      1,
+      Math.min(50, parseInt(query.limit ?? '20', 10) || 20),
+    );
+    const skip = (page - 1) * limit;
 
-  // ----- search theo món ăn / keyword -----
-  if (query.q) {
-    const q = query.q.trim();
+    const filter: FilterQuery<RestaurantDocument> = {};
 
-    filter.$or = [
-      { name: { $regex: q, $options: 'i' } },
-      { cuisine: { $regex: q, $options: 'i' } },
-      { tags: { $regex: q, $options: 'i' } },
-      { 'address.formatted': { $regex: q, $options: 'i' } },
-    ];
-  }
+    // ----- owner / category -----
+    if (query.ownerId) {
+      filter.ownerId = new Types.ObjectId(query.ownerId);
+    }
+    if (query.categoryId) {
+      filter.categoryId = new Types.ObjectId(query.categoryId);
+    }
 
-  const skip = (page - 1) * limit;
+    // ----- city / district -----
+    if (query.city) {
+      filter['address.city'] = {
+        $regex: new RegExp(`^${escapeRegExp(query.city.trim())}$`, 'i'),
+      };
+    }
+    if (query.district) {
+      filter['address.district'] = {
+        $regex: new RegExp(`^${escapeRegExp(query.district.trim())}$`, 'i'),
+      };
+    }
 
-  const [docs, total] = await Promise.all([
-    this.restaurantModel
-      .find(filter)
-      // ưu tiên quán rating cao + mới
-      .sort({ rating: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      // chỉ select những field cần cho card list
-      .select({
-        name: 1,
-        shortName: 1,
-        slug: 1,
-        logoUrl: 1,
-        coverImageUrl: 1,
-        priceRange: 1,
-        rating: 1,
-        cuisine: 1,
-        tags: 1,
-        'address.district': 1,
-        'address.city': 1,
-      })
-      .lean()
-      .exec(),
-    this.restaurantModel.countDocuments(filter),
-  ]);
+    // ----- priceRange -----
+    if (query.priceRange) {
+      filter.priceRange = query.priceRange.trim();
+    }
 
-  // 🔥 thêm prefix / signed URL cho hình ảnh
-  const items = await Promise.all(
-    docs.map((d) => this.expandSignedUrls(d)),
-  );
+    // ----- isActive -----
+    if (query.isActive !== undefined) {
+      filter.isActive = query.isActive === 'true';
+    }
 
-  return {
-    items,
-    total,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-  };
-}
-async findManyWithPaging(query: QueryRestaurantsDetailDto) {
-  const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
-  const limit = Math.max(
-    1,
-    Math.min(50, parseInt(query.limit ?? '20', 10) || 20),
-  );
-  const skip = (page - 1) * limit;
+    // ----- full-text / keyword search -----
+    if (query.q) {
+      const q = query.q.trim();
+      const regex = new RegExp(escapeRegExp(q), 'i');
 
-  const filter: FilterQuery<RestaurantDocument> = {};
+      filter.$or = [
+        { name: regex },
+        { shortName: regex },
+        { slug: regex },
+        { 'address.formatted': regex },
+        { tags: regex },
+        { cuisine: regex },
+        { searchTerms: regex },
+      ];
+    }
 
-  // ----- owner / category -----
-  if (query.ownerId) {
-    filter.ownerId = new Types.ObjectId(query.ownerId);
-  }
-  if (query.categoryId) {
-    filter.categoryId = new Types.ObjectId(query.categoryId);
-  }
+    // ----- sort chuẩn -----
+    let sortField: string;
+    switch (query.sortBy) {
+      case 'name':
+        sortField = 'name';
+        break;
+      case 'rating':
+        sortField = 'rating';
+        break;
+      case 'createdAt':
+      default:
+        sortField = 'createdAt';
+        break;
+    }
 
-  // ----- city / district -----
-  if (query.city) {
-    filter['address.city'] = {
-      $regex: new RegExp(`^${escapeRegExp(query.city.trim())}$`, 'i'),
+    const sortDir = query.sortDir === 'asc' ? 1 : -1;
+    const sort: Record<string, 1 | -1> = { [sortField]: sortDir };
+
+    const [docs, total] = await Promise.all([
+      this.restaurantModel
+        .find(filter)
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .select({
+          name: 1,
+          shortName: 1,
+          slug: 1,
+          logoUrl: 1,
+          coverImageUrl: 1,
+          priceRange: 1,
+          rating: 1,
+          cuisine: 1,
+          tags: 1,
+          'address.district': 1,
+          'address.city': 1,
+          isActive: 1,
+          createdAt: 1,
+        })
+        .lean()
+        .exec(),
+      this.restaurantModel.countDocuments(filter),
+    ]);
+
+    // 🔥 thêm prefix / signed URL cho hình ảnh
+    const items = await Promise.all(
+      docs.map((d) => this.expandSignedUrls(d)),
+    );
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
-  if (query.district) {
-    filter['address.district'] = {
-      $regex: new RegExp(`^${escapeRegExp(query.district.trim())}$`, 'i'),
+  async updateVisibility(
+    id: string,
+    params: { isHidden: boolean; actorId: string; roles?: string[] },
+  ) {
+    const { isHidden, actorId, roles = [] } = params;
+
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid restaurant id');
+    }
+
+    const isAdmin = Array.isArray(roles) && roles.includes('admin');
+
+    const filter: FilterQuery<RestaurantDocument> = {
+      _id: new Types.ObjectId(id),
     };
+
+    if (!isAdmin) {
+      filter.ownerId = new Types.ObjectId(actorId);
+    }
+
+    const updated = await this.restaurantModel.findOneAndUpdate(
+      filter,
+      {
+        $set: { isHidden },
+      },
+      { new: true },
+    );
+
+    if (!updated) {
+      throw new NotFoundException('Restaurant not found or not allowed');
+    }
+
+    return updated;
   }
-
-  // ----- priceRange -----
-  if (query.priceRange) {
-    filter.priceRange = query.priceRange.trim();
-  }
-
-  // ----- isActive -----
-  if (query.isActive !== undefined) {
-    filter.isActive = query.isActive === 'true';
-  }
-
-  // ----- full-text / keyword search -----
-  if (query.q) {
-    const q = query.q.trim();
-    const regex = new RegExp(escapeRegExp(q), 'i');
-
-    filter.$or = [
-      { name: regex },
-      { shortName: regex },
-      { slug: regex },
-      { 'address.formatted': regex },
-      { tags: regex },
-      { cuisine: regex },
-      { searchTerms: regex },
-    ];
-  }
-
-  // ----- sort chuẩn -----
-  let sortField: string;
-  switch (query.sortBy) {
-    case 'name':
-      sortField = 'name';
-      break;
-    case 'rating':
-      sortField = 'rating';
-      break;
-    case 'createdAt':
-    default:
-      sortField = 'createdAt';
-      break;
-  }
-
-  const sortDir = query.sortDir === 'asc' ? 1 : -1;
-  const sort: Record<string, 1 | -1> = { [sortField]: sortDir };
-
-  const [docs, total] = await Promise.all([
-    this.restaurantModel
-      .find(filter)
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .select({
-        name: 1,
-        shortName: 1,
-        slug: 1,
-        logoUrl: 1,
-        coverImageUrl: 1,
-        priceRange: 1,
-        rating: 1,
-        cuisine: 1,
-        tags: 1,
-        'address.district': 1,
-        'address.city': 1,
-        isActive: 1,
-        createdAt: 1,
-      })
-      .lean()
-      .exec(),
-    this.restaurantModel.countDocuments(filter),
-  ]);
-
-  // 🔥 thêm prefix / signed URL cho hình ảnh
-  const items = await Promise.all(
-    docs.map((d) => this.expandSignedUrls(d)),
-  );
-
-  return {
-    items,
-    total,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-  };
-}
-
 }

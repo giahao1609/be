@@ -39,7 +39,7 @@ export class PreOrderService {
     @InjectModel(Restaurant.name)
     private readonly restaurantModel: Model<RestaurantDocument>,
     private readonly mailer: MailerService,
-  ) {}
+  ) { }
 
   private toObjectId(id: string): Types.ObjectId {
     return new Types.ObjectId(id);
@@ -147,14 +147,59 @@ export class PreOrderService {
 
   // =========================================================
   // USER XEM LỊCH SỬ ĐẶT MÓN
-  // =========================================================
-  async listForUser(userId: string): Promise<PreOrder[]> {
-    const userObjectId = this.toObjectId(userId);
-    return this.preOrderModel
+  async listForUser(userId: string | Types.ObjectId) {
+    const userObjectId =
+      typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
+
+    const docs = await this.preOrderModel
       .find({ userId: userObjectId })
       .sort({ createdAt: -1 })
       .lean()
       .exec();
+
+    return docs.map((o: any) => ({
+      id: o._id.toString(),
+      restaurantId: o.restaurantId?.toString(),
+      items: (o.items || []).map((it: any) => ({
+        menuItemId: it.menuItemId?.toString(),
+        menuItemName: it.menuItemName,
+        unitPrice: {
+          currency: it.unitPrice?.currency ?? 'VND',
+          amount: it.unitPrice?.amount ?? it.unitPrice?.value ?? 0,
+        },
+        quantity: it.quantity,
+        lineTotal: {
+          currency: it.lineTotal?.currency ?? 'VND',
+          amount: it.lineTotal?.amount ?? it.lineTotal?.value ?? 0,
+        },
+        note: it.note,
+      })),
+      totalAmount: {
+        currency: o.totalAmount?.currency ?? 'VND',
+        amount: o.totalAmount?.amount ?? o.totalAmount?.value ?? 0,
+      },
+      depositPercent: o.depositPercent,
+      requiredDepositAmount: o.requiredDepositAmount
+        ? {
+          currency: o.requiredDepositAmount.currency ?? 'VND',
+          amount:
+            o.requiredDepositAmount.amount ??
+            o.requiredDepositAmount.value ??
+            0,
+        }
+        : undefined,
+      guestCount: o.guestCount,
+      arrivalTime: o.arrivalTime?.toISOString(),
+      contactName: o.contactName,
+      contactPhone: o.contactPhone,
+      note: o.note,
+      status: o.status,
+      paymentEmailSentAt: o.paymentEmailSentAt?.toISOString(),
+      paidAt: o.paidAt?.toISOString(),
+      paymentReference: o.paymentReference,
+      ownerNote: o.ownerNote,
+      createdAt: o.createdAt?.toISOString(),
+    }));
   }
 
   // =========================================================
@@ -509,9 +554,9 @@ export class PreOrderService {
     const depositStr =
       depositPercent > 0
         ? `${depositPercent}% (~${this.formatMoney({
-            currency,
-            amount: depositAmount,
-          })})`
+          currency,
+          amount: depositAmount,
+        })})`
         : '0% (thanh toán tại quán)';
 
     const statusLabelMap: Record<PreOrderStatus, string> = {
@@ -533,9 +578,8 @@ export class PreOrderService {
         return `
           <tr>
             <td style="padding:4px 8px;">${it.menuItemName ?? ''}</td>
-            <td style="padding:4px 8px; text-align:center;">${
-              it.quantity
-            }</td>
+            <td style="padding:4px 8px; text-align:center;">${it.quantity
+          }</td>
             <td style="padding:4px 8px; text-align:right;">${unitStr}</td>
             <td style="padding:4px 8px; text-align:right;">${lineTotalStr}</td>
           </tr>`;
@@ -546,9 +590,8 @@ export class PreOrderService {
       .map((it) => {
         const lineTotalStr = this.formatMoney(it.lineTotal);
         const unitStr = this.formatMoney(it.unitPrice);
-        return `- ${it.menuItemName ?? ''} x ${
-          it.quantity
-        } (${unitStr}/phần) = ${lineTotalStr}`;
+        return `- ${it.menuItemName ?? ''} x ${it.quantity
+          } (${unitStr}/phần) = ${lineTotalStr}`;
       })
       .join('\n');
 
@@ -561,65 +604,62 @@ export class PreOrderService {
 
       const bankLinesHtml =
         cfg.allowBankTransfer &&
-        cfg.bankTransfers &&
-        cfg.bankTransfers.length
+          cfg.bankTransfers &&
+          cfg.bankTransfers.length
           ? cfg.bankTransfers
-              .map((b) => {
-                const qrPart = b.qr?.imageUrl
-                  ? `<div>QR: <a href="${b.qr.imageUrl}" target="_blank">${b.qr.imageUrl}</a></div>`
-                  : '';
-                const desc = b.qr?.description
-                  ? `<div>${b.qr.description}</div>`
-                  : '';
-                return `
+            .map((b) => {
+              const qrPart = b.qr?.imageUrl
+                ? `<div>QR: <a href="${b.qr.imageUrl}" target="_blank">${b.qr.imageUrl}</a></div>`
+                : '';
+              const desc = b.qr?.description
+                ? `<div>${b.qr.description}</div>`
+                : '';
+              return `
                   <li>
-                    <div><strong>${b.bankName ?? ''}</strong> - ${
-                  b.accountName ?? ''
+                    <div><strong>${b.bankName ?? ''}</strong> - ${b.accountName ?? ''
                 }</div>
-                    <div>Số tài khoản: <strong>${
-                      b.accountNumber ?? ''
-                    }</strong></div>
+                    <div>Số tài khoản: <strong>${b.accountNumber ?? ''
+                }</strong></div>
                     ${b.branch ? `<div>Chi nhánh: ${b.branch}</div>` : ''}
                     ${qrPart}
                     ${desc}
                   </li>
                 `;
-              })
-              .join('')
+            })
+            .join('')
           : '';
 
       const bankLinesText =
         cfg.allowBankTransfer &&
-        cfg.bankTransfers &&
-        cfg.bankTransfers.length
+          cfg.bankTransfers &&
+          cfg.bankTransfers.length
           ? cfg.bankTransfers
-              .map((b) => {
-                const lines = [
-                  `${b.bankName ?? ''} - ${b.accountName ?? ''}`,
-                  `Số TK: ${b.accountNumber ?? ''}`,
-                  b.branch ? `Chi nhánh: ${b.branch}` : '',
-                  b.qr?.imageUrl ? `QR: ${b.qr.imageUrl}` : '',
-                  b.qr?.description ?? '',
-                ].filter(Boolean);
-                return lines.join(' | ');
-              })
-              .join('\n  ')
+            .map((b) => {
+              const lines = [
+                `${b.bankName ?? ''} - ${b.accountName ?? ''}`,
+                `Số TK: ${b.accountNumber ?? ''}`,
+                b.branch ? `Chi nhánh: ${b.branch}` : '',
+                b.qr?.imageUrl ? `QR: ${b.qr.imageUrl}` : '',
+                b.qr?.description ?? '',
+              ].filter(Boolean);
+              return lines.join(' | ');
+            })
+            .join('\n  ')
           : '';
 
       const walletLinesHtml =
         cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
           ? cfg.eWallets
-              .map((w) => {
-                const qrPart = w.qr?.imageUrl
-                  ? `<div>QR: <a href="${w.qr.imageUrl}" target="_blank">${w.qr.imageUrl}</a></div>`
-                  : '';
-                const desc = w.qr?.description
-                  ? `<div>${w.qr.description}</div>`
-                  : '';
-                return `
+            .map((w) => {
+              const qrPart = w.qr?.imageUrl
+                ? `<div>QR: <a href="${w.qr.imageUrl}" target="_blank">${w.qr.imageUrl}</a></div>`
+                : '';
+              const desc = w.qr?.description
+                ? `<div>${w.qr.description}</div>`
+                : '';
+              return `
                   <li>
-                    <div><strong>${w.provider ?? ''}</strong> - ${
-                  w.displayName ?? ''
+                    <div><strong>${w.provider ?? ''}</strong> - ${w.displayName ?? ''
                 }</div>
                     ${w.phoneNumber ? `<div>SĐT: ${w.phoneNumber}</div>` : ''}
                     ${w.accountId ? `<div>ID: ${w.accountId}</div>` : ''}
@@ -627,24 +667,24 @@ export class PreOrderService {
                     ${desc}
                   </li>
                 `;
-              })
-              .join('')
+            })
+            .join('')
           : '';
 
       const walletLinesText =
         cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
           ? cfg.eWallets
-              .map((w) => {
-                const lines = [
-                  `${w.provider ?? ''} - ${w.displayName ?? ''}`,
-                  w.phoneNumber ? `SĐT: ${w.phoneNumber}` : '',
-                  w.accountId ? `ID: ${w.accountId}` : '',
-                  w.qr?.imageUrl ? `QR: ${w.qr.imageUrl}` : '',
-                  w.qr?.description ?? '',
-                ].filter(Boolean);
-                return lines.join(' | ');
-              })
-              .join('\n  ')
+            .map((w) => {
+              const lines = [
+                `${w.provider ?? ''} - ${w.displayName ?? ''}`,
+                w.phoneNumber ? `SĐT: ${w.phoneNumber}` : '',
+                w.accountId ? `ID: ${w.accountId}` : '',
+                w.qr?.imageUrl ? `QR: ${w.qr.imageUrl}` : '',
+                w.qr?.description ?? '',
+              ].filter(Boolean);
+              return lines.join(' | ');
+            })
+            .join('\n  ')
           : '';
 
       const cashHtml = cfg.allowCash
@@ -656,15 +696,13 @@ export class PreOrderService {
 
       paymentMethodsHtml = `
         ${cashHtml}
-        ${
-          bankLinesHtml
-            ? `<p><strong>Chuyển khoản ngân hàng:</strong></p><ul>${bankLinesHtml}</ul>`
-            : ''
+        ${bankLinesHtml
+          ? `<p><strong>Chuyển khoản ngân hàng:</strong></p><ul>${bankLinesHtml}</ul>`
+          : ''
         }
-        ${
-          walletLinesHtml
-            ? `<p><strong>Ví điện tử:</strong></p><ul>${walletLinesHtml}</ul>`
-            : ''
+        ${walletLinesHtml
+          ? `<p><strong>Ví điện tử:</strong></p><ul>${walletLinesHtml}</ul>`
+          : ''
         }
         ${cfg.generalNote ? `<p><em>${cfg.generalNote}</em></p>` : ''}
       `;
@@ -726,13 +764,13 @@ export class PreOrderService {
           <h3>Thông tin thanh toán</h3>
           <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
           <p>Tiền cần thanh toán trước: <strong>${this.formatMoney({
-            currency,
-            amount: depositAmount,
-          })}</strong> (${depositPercent}%)</p>
+          currency,
+          amount: depositAmount,
+        })}</strong> (${depositPercent}%)</p>
           <p>Phần còn lại dự kiến: <strong>${this.formatMoney({
-            currency,
-            amount: remainAmount,
-          })}</strong> (thanh toán tại quán nếu có phát sinh).</p>
+          currency,
+          amount: remainAmount,
+        })}</strong> (thanh toán tại quán nếu có phát sinh).</p>
           <p>Mã thanh toán/đặt chỗ của bạn: <strong>${paymentCode}</strong></p>
           ${paymentMethodsHtml}
         `;
@@ -782,24 +820,21 @@ export class PreOrderService {
           <li>Nhà hàng: <strong>${restoName}</strong></li>
           <li>Thời gian đến dự kiến: <strong>${arrivalStr}</strong></li>
           <li>Số khách: <strong>${preOrder.guestCount}</strong></li>
-          <li>Người liên hệ: <strong>${preOrder.contactName}</strong> (${
-      preOrder.contactPhone
-    })</li>
+          <li>Người liên hệ: <strong>${preOrder.contactName}</strong> (${preOrder.contactPhone
+      })</li>
           <li>Tổng tiền dự kiến: <strong>${totalStr}</strong></li>
           <li>Tỉ lệ thanh toán trước: <strong>${depositStr}</strong></li>
           <li>Mã thanh toán/đặt chỗ: <strong>${paymentCode}</strong></li>
         </ul>
 
-        ${
-          preOrder.note
-            ? `<p><strong>Ghi chú của bạn:</strong> ${preOrder.note}</p>`
-            : ''
-        }
-        ${
-          preOrder.ownerNote
-            ? `<p><strong>Ghi chú từ nhà hàng:</strong> ${preOrder.ownerNote}</p>`
-            : ''
-        }
+        ${preOrder.note
+        ? `<p><strong>Ghi chú của bạn:</strong> ${preOrder.note}</p>`
+        : ''
+      }
+        ${preOrder.ownerNote
+        ? `<p><strong>Ghi chú từ nhà hàng:</strong> ${preOrder.ownerNote}</p>`
+        : ''
+      }
 
         <h3>Chi tiết món</h3>
         <table style="border-collapse:collapse; width:100%; max-width:640px;">

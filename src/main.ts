@@ -31,9 +31,27 @@ async function bootstrap() {
   //   credentials: true,
   // });
 
+  // app.enableCors({
+  //   origin: '*',
+  // });
+
   app.enableCors({
-    origin: '*',
+    origin: (origin, callback) => {
+      // cho phép cả localhost và domain production
+      const whitelist = [
+        'http://localhost:3000',
+        'https://food-map.online',
+      ];
+
+      if (!origin || whitelist.includes(origin)) {
+        callback(null, origin); // cho origin đó
+      } else {
+        callback(new Error('Not allowed by CORS'), null);
+      }
+    },
+    credentials: true,
   });
+
 
   const port =
     Number(config.get<number>('app.port')) || Number(process.env.PORT) || 3001;

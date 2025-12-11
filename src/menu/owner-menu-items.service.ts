@@ -912,291 +912,344 @@ export class OwnerMenuItemsService {
     return this.expandSignedUrls(doc);
   }
 
-async findTopDiscounted(query: QueryTopDiscountedDto) {
-  const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
-  const limit = Math.max(
-    1,
-    Math.min(50, parseInt(query.limit ?? '20', 10) || 20),
-  );
-  const skip = (page - 1) * limit;
-  const now = new Date();
+  async findTopDiscounted(query: QueryTopDiscountedDto) {
+    const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+    const limit = Math.max(
+      1,
+      Math.min(50, parseInt(query.limit ?? '20', 10) || 20),
+    );
+    const skip = (page - 1) * limit;
+    const now = new Date();
 
-  const match: FilterQuery<MenuItemDocument> = {
-    isAvailable: true,
-    $or: [
-      // có % giảm trực tiếp
-      { discountPercent: { $gt: 0 } },
+    const match: FilterQuery<MenuItemDocument> = {
+      isAvailable: true,
+      $or: [
+        // có % giảm trực tiếp
+        { discountPercent: { $gt: 0 } },
 
-      // compareAtPrice > basePrice
-      {
-        $expr: {
-          $gt: ['$compareAtPrice.amount', '$basePrice.amount'],
-        },
-      },
-
-      // có promotion đang hoạt động
-      {
-        promotions: {
-          $elemMatch: {
-            $and: [
-              {
-                $or: [
-                  { startAt: { $exists: false } },
-                  { startAt: null },
-                  { startAt: { $lte: now } },
-                ],
-              },
-              {
-                $or: [
-                  { endAt: { $exists: false } },
-                  { endAt: null },
-                  { endAt: { $gte: now } },
-                ],
-              },
-            ],
+        // compareAtPrice > basePrice
+        {
+          $expr: {
+            $gt: ['$compareAtPrice.amount', '$basePrice.amount'],
           },
         },
+
+        // có promotion đang hoạt động
+        {
+          promotions: {
+            $elemMatch: {
+              $and: [
+                {
+                  $or: [
+                    { startAt: { $exists: false } },
+                    { startAt: null },
+                    { startAt: { $lte: now } },
+                  ],
+                },
+                {
+                  $or: [
+                    { endAt: { $exists: false } },
+                    { endAt: null },
+                    { endAt: { $gte: now } },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const pipeline: any[] = [
+      { $match: match },
+      // join sang restaurants để lấy ảnh fallback
+      {
+        $lookup: {
+          from: 'restaurants',
+          localField: 'restaurantId',
+          foreignField: '_id',
+          as: 'restaurant',
+        },
       },
-    ],
-  };
-
-  const pipeline: any[] = [
-    { $match: match },
-    // join sang restaurants để lấy ảnh fallback
-    {
-      $lookup: {
-        from: 'restaurants',
-        localField: 'restaurantId',
-        foreignField: '_id',
-        as: 'restaurant',
+      { $unwind: { path: '$restaurant', preserveNullAndEmptyArrays: true } },
+      {
+        $sort: {
+          discountPercent: -1,
+          'compareAtPrice.amount': -1,
+          'basePrice.amount': 1,
+          createdAt: -1,
+        },
       },
-    },
-    { $unwind: { path: '$restaurant', preserveNullAndEmptyArrays: true } },
-    {
-      $sort: {
-        discountPercent: -1,
-        'compareAtPrice.amount': -1,
-        'basePrice.amount': 1,
-        createdAt: -1,
+      {
+        $facet: {
+          items: [{ $skip: skip }, { $limit: limit }],
+          total: [{ $count: 'count' }],
+        },
       },
-    },
-    {
-      $facet: {
-        items: [{ $skip: skip }, { $limit: limit }],
-        total: [{ $count: 'count' }],
-      },
-    },
-  ];
-
-  const agg = await this.menuItemModel.aggregate(pipeline).exec();
-  const facet = agg[0] || { items: [], total: [] };
-  const total = facet.total[0]?.count ?? 0;
-
-  // map & thêm fallback ảnh từ restaurant nếu món không có images
-  const docsWithFallback = (facet.items as any[]).map((d) => {
-    const images = Array.isArray(d.images) ? d.images : [];
-
-    if ((!images || images.length === 0) && d.restaurant?.coverImageUrl) {
-      return {
-        ...d,
-        images: [d.restaurant.coverImageUrl], // lấy cover của quán làm ảnh món
-      };
-    }
-
-    return d;
-  });
-
-  // 🔥 gắn prefix/signed URL cho ảnh (images → imagesSigned)
-  const items = await Promise.all(
-    docsWithFallback.map((d) => this.expandSignedUrls(d)),
-  );
-
-  // chỉ trả các field cần thiết ra ngoài cho FE
-  const sanitized = items.map((d: any) => ({
-    _id: d._id,
-    restaurantId: d.restaurantId,
-    categoryId: d.categoryId,
-    name: d.name,
-    slug: d.slug,
-    tags: d.tags,
-    cuisines: d.cuisines,
-    basePrice: d.basePrice,
-    compareAtPrice: d.compareAtPrice,
-    discountPercent: d.discountPercent,
-    promotions: d.promotions,
-    images: d.images,            // path gốc
-    imagesSigned: d.imagesSigned, // [{ path, url }]
-    // nếu muốn có thêm info quán:
-    restaurantName: d.restaurant?.name,
-    restaurantSlug: d.restaurant?.slug,
-  }));
-
-  return {
-    items: sanitized,
-    total,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-  };
-}
-
-
-
-async getFeaturedRestaurants(query: QueryFeaturedRestaurantsDto) {
-  const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
-  const limit = Math.max(
-    1,
-    Math.min(50, parseInt(query.limit ?? '12', 10) || 12),
-  );
-  const skip = (page - 1) * limit;
-
-  const minPrice =
-    query.minPrice !== undefined ? Number(query.minPrice) : undefined;
-  const maxPrice =
-    query.maxPrice !== undefined ? Number(query.maxPrice) : undefined;
-
-  const matchMenu: any = {
-    isAvailable: true,
-  };
-
-  // lọc theo khoảng giá (trên basePrice.amount)
-  if (minPrice !== undefined || maxPrice !== undefined) {
-    matchMenu['basePrice.amount'] = {};
-    if (minPrice !== undefined) matchMenu['basePrice.amount'].$gte = minPrice;
-    if (maxPrice !== undefined) matchMenu['basePrice.amount'].$lte = maxPrice;
-  }
-
-  // search món ăn (tên / mô tả / tags / cuisines)
-  if (query.q) {
-    const q = query.q.trim();
-    const regex = new RegExp(escapeRegExp(q), 'i');
-    matchMenu.$or = [
-      { name: regex },
-      { description: regex },
-      { tags: regex },
-      { cuisines: regex },
     ];
-  }
 
-  const districtFilter =
-    query.district && query.district.trim()
-      ? new RegExp(`^${escapeRegExp(query.district.trim())}$`, 'i')
-      : null;
+    const agg = await this.menuItemModel.aggregate(pipeline).exec();
+    const facet = agg[0] || { items: [], total: [] };
+    const total = facet.total[0]?.count ?? 0;
 
-  const pipeline: any[] = [
-    { $match: matchMenu },
-    {
-      $lookup: {
-        from: 'restaurants', // collection của Restaurant
-        localField: 'restaurantId',
-        foreignField: '_id',
-        as: 'restaurant',
-      },
-    },
-    { $unwind: '$restaurant' },
-    {
-      $match: {
-        'restaurant.isActive': true,
-        ...(districtFilter
-          ? { 'restaurant.address.district': districtFilter }
-          : {}),
-      },
-    },
-    {
-      $group: {
-        _id: '$restaurant._id',
-        restaurant: { $first: '$restaurant' },
+    // map & thêm fallback ảnh từ restaurant nếu món không có images
+    const docsWithFallback = (facet.items as any[]).map((d) => {
+      const images = Array.isArray(d.images) ? d.images : [];
 
-        minPrice: { $min: '$basePrice.amount' },
-        maxPrice: { $max: '$basePrice.amount' },
-        avgPrice: { $avg: '$basePrice.amount' },
+      if ((!images || images.length === 0) && d.restaurant?.coverImageUrl) {
+        return {
+          ...d,
+          images: [d.restaurant.coverImageUrl], // lấy cover của quán làm ảnh món
+        };
+      }
 
-        itemCount: { $sum: 1 },
-        discountedItemCount: {
-          $sum: {
-            $cond: [
-              {
-                $or: [
-                  { $gt: ['$discountPercent', 0] },
-                  {
-                    $gt: [
-                      '$compareAtPrice.amount',
-                      '$basePrice.amount',
-                    ],
-                  },
-                ],
-              },
-              1,
-              0,
-            ],
-          },
-        },
-      },
-    },
-    {
-      $sort: {
-        // ưu tiên quán rating cao + nhiều món giảm giá
-        'restaurant.rating': -1,
-        discountedItemCount: -1,
-        avgPrice: 1,
-      },
-    },
-    {
-      $facet: {
-        items: [{ $skip: skip }, { $limit: limit }],
-        total: [{ $count: 'count' }],
-      },
-    },
-  ];
+      return d;
+    });
 
-  const aggResult = await this.menuItemModel.aggregate(pipeline).exec();
-  const facet = aggResult[0] || { items: [], total: [] };
-  const total = facet.total[0]?.count ?? 0;
+    // 🔥 gắn prefix/signed URL cho ảnh (images → imagesSigned)
+    const items = await Promise.all(
+      docsWithFallback.map((d) => this.expandSignedUrls(d)),
+    );
 
-  const rawItems = facet.items.map((g: any) => {
-    const r = g.restaurant;
-
-    // 👇 GHÉP ảnh cover + logo vào mảng images
-    const images: string[] = [];
-    if (r.coverImageUrl) images.push(r.coverImageUrl);
-    if (r.logoUrl) images.push(r.logoUrl);
+    // chỉ trả các field cần thiết ra ngoài cho FE
+    const sanitized = items.map((d: any) => ({
+      _id: d._id,
+      restaurantId: d.restaurantId,
+      categoryId: d.categoryId,
+      name: d.name,
+      slug: d.slug,
+      tags: d.tags,
+      cuisines: d.cuisines,
+      basePrice: d.basePrice,
+      compareAtPrice: d.compareAtPrice,
+      discountPercent: d.discountPercent,
+      promotions: d.promotions,
+      images: d.images,            // path gốc
+      imagesSigned: d.imagesSigned, // [{ path, url }]
+      // nếu muốn có thêm info quán:
+      restaurantName: d.restaurant?.name,
+      restaurantSlug: d.restaurant?.slug,
+    }));
 
     return {
-      id: r._id,
-      name: r.name,
-      shortName: r.shortName,
-      slug: r.slug,
-      logoUrl: r.logoUrl,
-      coverImageUrl: r.coverImageUrl,
-      rating: r.rating,
-      district: r.address?.district,
-      city: r.address?.city,
-      cuisine: r.cuisine ?? [],
-      priceRange: r.priceRange ?? '',
-      minPrice: g.minPrice,
-      maxPrice: g.maxPrice,
-      avgPrice: Math.round(g.avgPrice || 0),
-      itemCount: g.itemCount,
-      discountedItemCount: g.discountedItemCount,
-
-      // 🔥 thêm field images để expandSignedUrls() xử lý
-      images,
+      items: sanitized,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
-  });
-
-  // 🔥 gắn prefix/signed URL cho hình quán (logo, cover) thông qua images → imagesSigned
-  const items = await Promise.all(
-    rawItems.map((d) => this.expandSignedUrls(d)),
-  );
-
-  return {
-    items,
-    page,
-    limit,
-    total,
-    totalPages: Math.ceil(total / limit),
-  };
-}
+  }
 
 
+
+  async getFeaturedRestaurants(query: QueryFeaturedRestaurantsDto) {
+    const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+    const limit = Math.max(
+      1,
+      Math.min(50, parseInt(query.limit ?? '12', 10) || 12),
+    );
+    const skip = (page - 1) * limit;
+
+    const minPrice =
+      query.minPrice !== undefined ? Number(query.minPrice) : undefined;
+    const maxPrice =
+      query.maxPrice !== undefined ? Number(query.maxPrice) : undefined;
+
+    const matchMenu: any = {
+      isAvailable: true,
+    };
+
+    // lọc theo khoảng giá (trên basePrice.amount)
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      matchMenu['basePrice.amount'] = {};
+      if (minPrice !== undefined) matchMenu['basePrice.amount'].$gte = minPrice;
+      if (maxPrice !== undefined) matchMenu['basePrice.amount'].$lte = maxPrice;
+    }
+
+    // search món ăn (tên / mô tả / tags / cuisines)
+    if (query.q) {
+      const q = query.q.trim();
+      const regex = new RegExp(escapeRegExp(q), 'i');
+      matchMenu.$or = [
+        { name: regex },
+        { description: regex },
+        { tags: regex },
+        { cuisines: regex },
+      ];
+    }
+
+    const districtFilter =
+      query.district && query.district.trim()
+        ? new RegExp(`^${escapeRegExp(query.district.trim())}$`, 'i')
+        : null;
+
+    const pipeline: any[] = [
+      { $match: matchMenu },
+      {
+        $lookup: {
+          from: 'restaurants', // collection của Restaurant
+          localField: 'restaurantId',
+          foreignField: '_id',
+          as: 'restaurant',
+        },
+      },
+      { $unwind: '$restaurant' },
+      {
+        $match: {
+          'restaurant.isActive': true,
+          ...(districtFilter
+            ? { 'restaurant.address.district': districtFilter }
+            : {}),
+        },
+      },
+      {
+        $group: {
+          _id: '$restaurant._id',
+          restaurant: { $first: '$restaurant' },
+
+          minPrice: { $min: '$basePrice.amount' },
+          maxPrice: { $max: '$basePrice.amount' },
+          avgPrice: { $avg: '$basePrice.amount' },
+
+          itemCount: { $sum: 1 },
+          discountedItemCount: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $gt: ['$discountPercent', 0] },
+                    {
+                      $gt: [
+                        '$compareAtPrice.amount',
+                        '$basePrice.amount',
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $sort: {
+          // ưu tiên quán rating cao + nhiều món giảm giá
+          'restaurant.rating': -1,
+          discountedItemCount: -1,
+          avgPrice: 1,
+        },
+      },
+      {
+        $facet: {
+          items: [{ $skip: skip }, { $limit: limit }],
+          total: [{ $count: 'count' }],
+        },
+      },
+    ];
+
+    const aggResult = await this.menuItemModel.aggregate(pipeline).exec();
+    const facet = aggResult[0] || { items: [], total: [] };
+    const total = facet.total[0]?.count ?? 0;
+
+    const rawItems = facet.items.map((g: any) => {
+      const r = g.restaurant;
+
+      // 👇 GHÉP ảnh cover + logo vào mảng images
+      const images: string[] = [];
+      if (r.coverImageUrl) images.push(r.coverImageUrl);
+      if (r.logoUrl) images.push(r.logoUrl);
+
+      return {
+        id: r._id,
+        name: r.name,
+        shortName: r.shortName,
+        slug: r.slug,
+        logoUrl: r.logoUrl,
+        coverImageUrl: r.coverImageUrl,
+        rating: r.rating,
+        district: r.address?.district,
+        city: r.address?.city,
+        cuisine: r.cuisine ?? [],
+        priceRange: r.priceRange ?? '',
+        minPrice: g.minPrice,
+        maxPrice: g.maxPrice,
+        avgPrice: Math.round(g.avgPrice || 0),
+        itemCount: g.itemCount,
+        discountedItemCount: g.discountedItemCount,
+
+        // 🔥 thêm field images để expandSignedUrls() xử lý
+        images,
+      };
+    });
+
+    // 🔥 gắn prefix/signed URL cho hình quán (logo, cover) thông qua images → imagesSigned
+    const items = await Promise.all(
+      rawItems.map((d) => this.expandSignedUrls(d)),
+    );
+
+    return {
+      items,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async searchMenuItemsGlobal(
+    q: string,
+    opts: { page: number; limit: number },
+  ) {
+    const { page, limit } = opts;
+    const skip = (page - 1) * limit;
+
+    const baseFilter: FilterQuery<MenuItemDocument> = {
+      isAvailable: true,
+    };
+
+    const useTextSearch = q.length >= 2;
+
+    const filter: FilterQuery<MenuItemDocument> = useTextSearch
+      ? {
+        ...baseFilter,
+        $text: { $search: q },
+      }
+      : {
+        ...baseFilter,
+        name: { $regex: q, $options: 'i' },
+      };
+
+    const sort = useTextSearch
+      ? { score: { $meta: 'textScore' as any } }
+      : { sortIndex: 1, name: 1 };
+
+    const projection = useTextSearch
+      ? { score: { $meta: 'textScore' as any } }
+      : {};
+
+    const [items, total] = await Promise.all([
+      this.menuItemModel
+        .find(filter, projection)
+        .sort(sort as any)
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.menuItemModel.countDocuments(filter).exec(),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
+  }
 }

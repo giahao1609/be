@@ -1,6 +1,6 @@
 // src/menu-items/dto/query-menu-items.dto.ts
 import { Type } from 'class-transformer';
-import { IsArray, IsBooleanString, IsEnum, IsInt, IsMongoId, IsNumberString, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsBooleanString, IsEnum, IsInt, IsMongoId, IsNotEmpty, IsNumberString, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class QueryMenuItemsDto {
   @IsOptional() @IsString() q?: string;
@@ -56,4 +56,23 @@ export class QueryFeaturedRestaurantsDto {
   @IsOptional()
   @IsString()
   q?: string;
+}
+
+export class SearchMenuItemsDto {
+  @IsString()
+  @IsNotEmpty()
+  q!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit: number = 20;
 }

@@ -20,7 +20,7 @@ import { OwnerMenuItemsService } from './owner-menu-items.service';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Types } from 'mongoose';
-import { QueryFeaturedRestaurantsDto, QueryMenuItemsDto, QueryTopDiscountedDto } from './dto/query-menu-items.dto';
+import { QueryFeaturedRestaurantsDto, QueryMenuItemsDto, QueryTopDiscountedDto, SearchMenuItemsDto } from './dto/query-menu-items.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { UpdateMenuItemDto } from './dto/update-menu-item.dto';
 
@@ -47,6 +47,24 @@ export class MenuItemsController {
     return {
       success: true,
       message: 'Featured restaurants fetched successfully',
+      data,
+    };
+  }
+
+  @Get('search')
+  async search(@Query() query: SearchMenuItemsDto) {
+    if (!query.q || !query.q.trim()) {
+      throw new BadRequestException('Query "q" is required');
+    }
+
+    const data = await this.service.searchMenuItemsGlobal(query.q.trim(), {
+      page: query.page,
+      limit: query.limit,
+    });
+
+    return {
+      success: true,
+      message: 'Menu items searched successfully',
       data,
     };
   }

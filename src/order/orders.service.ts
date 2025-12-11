@@ -25,6 +25,7 @@ import {
   RestaurantDocument,
 } from 'src/restaurants/schema/restaurant.schema';
 import { MailerService } from '@nestjs-modules/mailer';
+import { UploadService } from 'src/upload/upload.service';
 
 
 @Injectable()
@@ -39,6 +40,7 @@ export class PreOrderService {
     @InjectModel(Restaurant.name)
     private readonly restaurantModel: Model<RestaurantDocument>,
     private readonly mailer: MailerService,
+    private readonly uploadService: UploadService,
   ) { }
 
   private toObjectId(id: string): Types.ObjectId {
@@ -157,49 +159,178 @@ export class PreOrderService {
       .lean()
       .exec();
 
-    return docs.map((o: any) => ({
-      id: o._id.toString(),
-      restaurantId: o.restaurantId?.toString(),
-      items: (o.items || []).map((it: any) => ({
-        menuItemId: it.menuItemId?.toString(),
-        menuItemName: it.menuItemName,
-        unitPrice: {
-          currency: it.unitPrice?.currency ?? 'VND',
-          amount: it.unitPrice?.amount ?? it.unitPrice?.value ?? 0,
-        },
-        quantity: it.quantity,
-        lineTotal: {
-          currency: it.lineTotal?.currency ?? 'VND',
-          amount: it.lineTotal?.amount ?? it.lineTotal?.value ?? 0,
-        },
-        note: it.note,
-      })),
-      totalAmount: {
-        currency: o.totalAmount?.currency ?? 'VND',
-        amount: o.totalAmount?.amount ?? o.totalAmount?.value ?? 0,
-      },
-      depositPercent: o.depositPercent,
-      requiredDepositAmount: o.requiredDepositAmount
-        ? {
-          currency: o.requiredDepositAmount.currency ?? 'VND',
-          amount:
-            o.requiredDepositAmount.amount ??
-            o.requiredDepositAmount.value ??
-            0,
+    // ==== 1) Lấy toàn bộ restaurant liên quan ====
+    const restaurantIds = Array.from(
+      new Set(
+        docs
+          .map((o: any) => o.restaurantId)
+          .filter((id: any) => !!id),
+      ),
+    ) as Types.ObjectId[];
+
+    const restaurantMap = new Map<string, any>();
+
+    if (restaurantIds.length > 0) {
+      const restaurants = await this.restaurantModel
+        .find({ _id: { $in: restaurantIds } })
+        .lean()
+        .exec();
+
+      for (const r of restaurants as any[]) {
+        const idStr = r._id.toString();
+
+        // Map ảnh logo/cover/gallery -> public URL
+        const logoUrl = this.uploadService.toPublicUrl(r.logoUrl);
+        const coverImageUrl = this.uploadService.toPublicUrl(r.coverImageUrl);
+        const gallery = (r.gallery ?? []).map((p: string) =>
+          this.uploadService.toPublicUrl(p),
+        );
+
+        // Map paymentConfig QR -> public URL
+        let paymentConfig = r.paymentConfig;
+        if (paymentConfig) {
+          paymentConfig = {
+            ...paymentConfig,
+            bankTransfers: (paymentConfig.bankTransfers ?? []).map((b: any) => ({
+              ...b,
+              qr: b.qr
+                ? {
+                  ...b.qr,
+                  imageUrl: this.uploadService.toPublicUrl(b.qr.imageUrl),
+                }
+                : undefined,
+            })),
+            eWallets: (paymentConfig.eWallets ?? []).map((w: any) => ({
+              ...w,
+              qr: w.qr
+                ? {
+                  ...w.qr,
+                  imageUrl: this.uploadService.toPublicUrl(w.qr.imageUrl),
+                }
+                : undefined,
+            })),
+          };
         }
-        : undefined,
-      guestCount: o.guestCount,
-      arrivalTime: o.arrivalTime?.toISOString(),
-      contactName: o.contactName,
-      contactPhone: o.contactPhone,
-      note: o.note,
-      status: o.status,
-      paymentEmailSentAt: o.paymentEmailSentAt?.toISOString(),
-      paidAt: o.paidAt?.toISOString(),
-      paymentReference: o.paymentReference,
-      ownerNote: o.ownerNote,
-      createdAt: o.createdAt?.toISOString(),
-    }));
+
+        // “Full info” restaurant, chỉ override id + các field ảnh
+        const restaurantFull = {
+          ...r,
+          id: idStr,
+          logoUrl,
+          coverImageUrl,
+          gallery,
+          paymentConfig,
+        };
+
+        restaurantMap.set(idStr, restaurantFull);
+      }
+    }
+
+    // ==== 2) Lấy toàn bộ menu item liên quan để map ảnh món ăn ====
+    const menuItemIdSet = new Set<string>();
+    for (const o of docs as any[]) {
+      for (const it of o.items ?? []) {
+        if (it.menuItemId) {
+          menuItemIdSet.add(it.menuItemId.toString());
+        }
+      }
+    }
+
+    const menuItemIds = Array.from(menuItemIdSet).map(
+      (id) => new Types.ObjectId(id),
+    );
+    const menuItemMap = new Map<string, any>();
+
+    if (menuItemIds.length > 0) {
+      const menuItems = await this.menuItemModel
+        .find({ _id: { $in: menuItemIds } })
+        .lean()
+        .exec();
+
+      for (const m of menuItems as any[]) {
+        const idStr = m._id.toString();
+
+        const images = (m.images ?? []).map((p: string) =>
+          this.uploadService.toPublicUrl(p),
+        );
+
+        // Có thể giữ gần full info menu item, chỉ chỉnh images
+        const mappedMenuItem = {
+          ...m,
+          id: idStr,
+          images,
+        };
+
+        menuItemMap.set(idStr, mappedMenuItem);
+      }
+    }
+
+    // ==== 3) Map kết quả trả về cho FE ====
+    return docs.map((o: any) => {
+      const restaurantIdStr = o.restaurantId?.toString();
+      const restaurant = restaurantIdStr
+        ? restaurantMap.get(restaurantIdStr) ?? null
+        : null;
+
+      return {
+        id: o._id.toString(),
+        restaurantId: restaurantIdStr,
+
+        // 🔥 full thông tin nhà hàng (đã map ảnh + paymentConfig)
+        restaurant,
+
+        items: (o.items || []).map((it: any) => {
+          const menuItemIdStr = it.menuItemId?.toString();
+          const menuItem = menuItemIdStr
+            ? menuItemMap.get(menuItemIdStr) ?? null
+            : null;
+
+          return {
+            menuItemId: menuItemIdStr,
+            menuItemName: it.menuItemName,
+            unitPrice: {
+              currency: it.unitPrice?.currency ?? 'VND',
+              amount: it.unitPrice?.amount ?? it.unitPrice?.value ?? 0,
+            },
+            quantity: it.quantity,
+            lineTotal: {
+              currency: it.lineTotal?.currency ?? 'VND',
+              amount: it.lineTotal?.amount ?? it.lineTotal?.value ?? 0,
+            },
+            note: it.note,
+
+            // 🔥 thông tin menu item + ảnh món ăn (images là URL public)
+            menuItem,
+          };
+        }),
+
+        totalAmount: {
+          currency: o.totalAmount?.currency ?? 'VND',
+          amount: o.totalAmount?.amount ?? o.totalAmount?.value ?? 0,
+        },
+        depositPercent: o.depositPercent,
+        requiredDepositAmount: o.requiredDepositAmount
+          ? {
+            currency: o.requiredDepositAmount.currency ?? 'VND',
+            amount:
+              o.requiredDepositAmount.amount ??
+              o.requiredDepositAmount.value ??
+              0,
+          }
+          : undefined,
+        guestCount: o.guestCount,
+        arrivalTime: o.arrivalTime?.toISOString(),
+        contactName: o.contactName,
+        contactPhone: o.contactPhone,
+        note: o.note,
+        status: o.status,
+        paymentEmailSentAt: o.paymentEmailSentAt?.toISOString(),
+        paidAt: o.paidAt?.toISOString(),
+        paymentReference: o.paymentReference,
+        ownerNote: o.ownerNote,
+        createdAt: o.createdAt?.toISOString(),
+      };
+    });
   }
 
   // =========================================================

@@ -11,6 +11,7 @@ import { PreOrderController } from './pre-order.controller';
 import { PreOrder, PreOrderItem, PreOrderItemSchema, PreOrderSchema } from './schema/order.schema';
 import { User, UserSchema } from 'src/users/schema/user.schema';
 import { UsersService } from 'src/users/users.service';
+import { UploadService } from 'src/upload/upload.service';
 
 
 @Module({
@@ -24,7 +25,7 @@ import { UsersService } from 'src/users/users.service';
     ]),
   ],
   controllers: [PreOrderController],
-  providers: [PreOrderService,UsersService],
+  providers: [PreOrderService,UsersService, UploadService],
   exports: [PreOrderService],
 })
 export class OrdersModule { }

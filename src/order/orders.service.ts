@@ -1028,6 +1028,425 @@ export class PreOrderService {
   //   return { subject, html, text };
   // }
 
+  // private buildPreOrderEmailContent(
+  //   preOrder: PreOrderDocument,
+  //   user: UserDocument,
+  //   restaurant: RestaurantDocument | null,
+  //   extraNote?: string,
+  // ): { subject: string; html: string; text: string } {
+  //   const status = preOrder.status as PreOrderStatus;
+  //   const restoName = restaurant?.name ?? 'nhà hàng';
+  //   const arrivalStr = this.formatDateTime(preOrder.arrivalTime);
+  //   const totalStr = this.formatMoney(preOrder.totalAmount);
+
+  //   const paymentCode = preOrder._id?.toString?.() ?? '';
+
+  //   const depositPercent = preOrder.depositPercent ?? 0;
+  //   const totalAmount = preOrder.totalAmount?.amount ?? 0;
+  //   const currency = preOrder.totalAmount?.currency ?? 'VND';
+
+  //   const depositAmount =
+  //     preOrder.requiredDepositAmount?.amount ??
+  //     (depositPercent > 0 ? (totalAmount * depositPercent) / 100 : 0);
+
+  //   const remainAmount =
+  //     depositPercent > 0 ? totalAmount - depositAmount : totalAmount;
+
+  //   const depositStr =
+  //     depositPercent > 0
+  //       ? `${depositPercent}% (~${this.formatMoney({
+  //         currency,
+  //         amount: depositAmount,
+  //       })})`
+  //       : '0% (thanh toán tại quán)';
+
+  //   const statusLabelMap: Record<PreOrderStatus, string> = {
+  //     PENDING: 'đang chờ nhà hàng xử lý',
+  //     AWAITING_PAYMENT: 'đang chờ bạn thanh toán',
+  //     PAID: 'đã thanh toán, chờ nhà hàng xác nhận',
+  //     CONFIRMED: 'đã được xác nhận',
+  //     REJECTED: 'bị từ chối',
+  //     CANCELLED: 'đã bị hủy',
+  //   };
+
+  //   const statusLabel = statusLabelMap[status] ?? status;
+
+  //   // ===== ITEMS TABLE =====
+  //   const itemsRowsHtml = (preOrder.items ?? [])
+  //     .map((it) => {
+  //       const lineTotalStr = this.formatMoney(it.lineTotal);
+  //       const unitStr = this.formatMoney(it.unitPrice);
+  //       return `
+  //         <tr>
+  //           <td style="padding:4px 8px;">${it.menuItemName ?? ''}</td>
+  //           <td style="padding:4px 8px; text-align:center;">${it.quantity}</td>
+  //           <td style="padding:4px 8px; text-align:right;">${unitStr}</td>
+  //           <td style="padding:4px 8px; text-align:right;">${lineTotalStr}</td>
+  //         </tr>`;
+  //     })
+  //     .join('');
+
+  //   const itemsRowsText = (preOrder.items ?? [])
+  //     .map((it) => {
+  //       const lineTotalStr = this.formatMoney(it.lineTotal);
+  //       const unitStr = this.formatMoney(it.unitPrice);
+  //       return `- ${it.menuItemName ?? ''} x ${it.quantity
+  //         } (${unitStr}/phần) = ${lineTotalStr}`;
+  //     })
+  //     .join('\n');
+
+  //   // ===== PAYMENT METHODS (BANK / WALLET) – MAP QR -> PUBLIC URL + IMG =====
+  //   let paymentMethodsHtml = '';
+  //   let paymentMethodsText = '';
+
+  //   // map paymentConfig sang object mới với imageUrl đã là public URL
+  //   const rawCfg: any = restaurant?.paymentConfig ?? null;
+  //   const cfg =
+  //     rawCfg && typeof rawCfg === 'object'
+  //       ? {
+  //         ...rawCfg,
+  //         bankTransfers: (rawCfg.bankTransfers ?? []).map((b: any) => {
+  //           const qrUrl = this.uploadService.toPublicUrl(b?.qr?.imageUrl);
+  //           return {
+  //             ...b,
+  //             qr: b.qr
+  //               ? {
+  //                 ...b.qr,
+  //                 imageUrl: qrUrl || undefined,
+  //               }
+  //               : undefined,
+  //           };
+  //         }),
+  //         eWallets: (rawCfg.eWallets ?? []).map((w: any) => {
+  //           const qrUrl = this.uploadService.toPublicUrl(w?.qr?.imageUrl);
+  //           return {
+  //             ...w,
+  //             qr: w.qr
+  //               ? {
+  //                 ...w.qr,
+  //                 imageUrl: qrUrl || undefined,
+  //               }
+  //               : undefined,
+  //           };
+  //         }),
+  //       }
+  //       : null;
+
+  //   if (cfg) {
+  //     const bankLinesHtml =
+  //       cfg.allowBankTransfer && cfg.bankTransfers && cfg.bankTransfers.length
+  //         ? cfg.bankTransfers
+  //           .map((b: any) => {
+  //             const qrUrl: string | undefined = b.qr?.imageUrl;
+  //             const qrPart = qrUrl
+  //               ? `
+  //                 <div style="margin-top:4px;">
+  //                   <div>QR:</div>
+  //                   <a href="${qrUrl}" target="_blank" rel="noopener noreferrer">${qrUrl}</a>
+  //                   <div style="margin-top:4px;">
+  //                     <img src="${qrUrl}"
+  //                          alt="QR chuyển khoản"
+  //                          style="max-width:220px; border-radius:8px; border:1px solid #eee;" />
+  //                   </div>
+  //                 </div>
+  //               `
+  //               : '';
+  //             const desc = b.qr?.description
+  //               ? `<div>${b.qr.description}</div>`
+  //               : '';
+  //             return `
+  //                 <li style="margin-bottom:8px;">
+  //                   <div><strong>${b.bankName ?? ''}</strong> - ${b.accountName ?? ''
+  //               }</div>
+  //                   <div>Số tài khoản: <strong>${b.accountNumber ?? ''}</strong></div>
+  //                   ${b.branch ? `<div>Chi nhánh: ${b.branch}</div>` : ''}
+  //                   ${qrPart}
+  //                   ${desc}
+  //                 </li>
+  //               `;
+  //           })
+  //           .join('')
+  //         : '';
+
+  //     const bankLinesText =
+  //       cfg.allowBankTransfer && cfg.bankTransfers && cfg.bankTransfers.length
+  //         ? cfg.bankTransfers
+  //           .map((b: any) => {
+  //             const qrUrl: string | undefined = b.qr?.imageUrl
+  //               ? this.uploadService.toPublicUrl(b.qr.imageUrl)
+  //               : undefined;
+  //             const lines = [
+  //               `${b.bankName ?? ''} - ${b.accountName ?? ''}`,
+  //               `Số TK: ${b.accountNumber ?? ''}`,
+  //               b.branch ? `Chi nhánh: ${b.branch}` : '',
+  //               qrUrl ? `QR: ${qrUrl}` : '',
+  //               b.qr?.description ?? '',
+  //             ].filter(Boolean);
+  //             return lines.join(' | ');
+  //           })
+  //           .join('\n  ')
+  //         : '';
+
+  //     const walletLinesHtml =
+  //       cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
+  //         ? cfg.eWallets
+  //           .map((w: any) => {
+  //             const qrUrl: string | undefined = w.qr?.imageUrl;
+  //             const qrPart = qrUrl
+  //               ? `
+  //                 <div style="margin-top:4px;">
+  //                   <div>QR:</div>
+  //                   <a href="${qrUrl}" target="_blank" rel="noopener noreferrer">${qrUrl}</a>
+  //                   <div style="margin-top:4px;">
+  //                     <img src="${qrUrl}"
+  //                          alt="QR ví điện tử"
+  //                          style="max-width:220px; border-radius:8px; border:1px solid #eee;" />
+  //                   </div>
+  //                 </div>
+  //               `
+  //               : '';
+  //             const desc = w.qr?.description
+  //               ? `<div>${w.qr.description}</div>`
+  //               : '';
+  //             return `
+  //                 <li style="margin-bottom:8px;">
+  //                   <div><strong>${w.provider ?? ''}</strong> - ${w.displayName ?? ''
+  //               }</div>
+  //                   ${w.phoneNumber
+  //                 ? `<div>SĐT: ${w.phoneNumber}</div>`
+  //                 : ''
+  //               }
+  //                   ${w.accountId ? `<div>ID: ${w.accountId}</div>` : ''}
+  //                   ${qrPart}
+  //                   ${desc}
+  //                 </li>
+  //               `;
+  //           })
+  //           .join('')
+  //         : '';
+
+  //     const walletLinesText =
+  //       cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
+  //         ? cfg.eWallets
+  //           .map((w: any) => {
+  //             const qrUrl: string | undefined = w.qr?.imageUrl
+  //               ? this.uploadService.toPublicUrl(w.qr.imageUrl)
+  //               : undefined;
+  //             const lines = [
+  //               `${w.provider ?? ''} - ${w.displayName ?? ''}`,
+  //               w.phoneNumber ? `SĐT: ${w.phoneNumber}` : '',
+  //               w.accountId ? `ID: ${w.accountId}` : '',
+  //               qrUrl ? `QR: ${qrUrl}` : '',
+  //               w.qr?.description ?? '',
+  //             ].filter(Boolean);
+  //             return lines.join(' | ');
+  //           })
+  //           .join('\n  ')
+  //         : '';
+
+  //     const cashHtml = cfg.allowCash
+  //       ? '<p>✓ Chấp nhận thanh toán tiền mặt tại nhà hàng.</p>'
+  //       : '';
+  //     const cashText = cfg.allowCash ? '- Thanh toán tiền mặt tại quán' : '';
+
+  //     paymentMethodsHtml = `
+  //     ${cashHtml}
+  //     ${bankLinesHtml
+  //         ? `<p><strong>Chuyển khoản ngân hàng:</strong></p><ul>${bankLinesHtml}</ul>`
+  //         : ''
+  //       }
+  //     ${walletLinesHtml
+  //         ? `<p><strong>Ví điện tử:</strong></p><ul>${walletLinesHtml}</ul>`
+  //         : ''
+  //       }
+  //     ${cfg.generalNote ? `<p><em>${cfg.generalNote}</em></p>` : ''}
+  //   `;
+
+  //     paymentMethodsText = [
+  //       cashText,
+  //       bankLinesText ? `- Chuyển khoản ngân hàng:\n  ${bankLinesText}` : '',
+  //       walletLinesText ? `- Ví điện tử:\n  ${walletLinesText}` : '',
+  //       cfg.generalNote ? `Ghi chú: ${cfg.generalNote}` : '',
+  //     ]
+  //       .filter(Boolean)
+  //       .join('\n');
+  //   }
+
+  //   // ===== SUBJECT & INTRO =====
+  //   let subject = `[${restoName}] Đơn đặt chỗ của bạn ${statusLabel}`;
+  //   let intro = `Đơn đặt chỗ của bạn tại ${restoName} hiện đang ở trạng thái: ${statusLabel}.`;
+
+  //   if (status === 'AWAITING_PAYMENT' && depositPercent > 0) {
+  //     subject = `[${restoName}] Vui lòng thanh toán trước ${depositStr} để giữ chỗ`;
+  //     intro = `Nhà hàng yêu cầu thanh toán trước ${depositStr} (tương đương ${this.formatMoney(
+  //       { currency, amount: depositAmount },
+  //     )}) để giữ chỗ. Vui lòng thanh toán và ghi MÃ THANH TOÁN: ${paymentCode} trong nội dung.`;
+  //   } else if (status === 'PAID') {
+  //     subject = `[${restoName}] Đã nhận thanh toán đặt chỗ của bạn`;
+  //     intro = `Nhà hàng đã nhận được khoản thanh toán của bạn (mã thanh toán: ${paymentCode}). Đơn đặt chỗ đang chờ xác nhận cuối cùng.`;
+  //   } else if (status === 'CONFIRMED') {
+  //     subject = `[${restoName}] Đơn đặt chỗ đã được xác nhận`;
+  //     intro =
+  //       depositPercent > 0
+  //         ? `Đơn đặt chỗ của bạn đã được xác nhận. Nhà hàng đã ghi nhận khoản thanh toán trước ${depositStr}. Mã thanh toán/đặt chỗ của bạn là: ${paymentCode}.`
+  //         : `Đơn đặt chỗ của bạn đã được xác nhận. Bạn sẽ thanh toán trực tiếp tại nhà hàng. Mã đặt chỗ của bạn là: ${paymentCode}.`;
+  //   } else if (status === 'REJECTED') {
+  //     subject = `[${restoName}] Đơn đặt chỗ bị từ chối`;
+  //     intro = `Rất tiếc, đơn đặt chỗ của bạn đã bị nhà hàng từ chối.`;
+  //   } else if (status === 'CANCELLED') {
+  //     subject = `[${restoName}] Đơn đặt chỗ đã bị hủy`;
+  //     intro = `Đơn đặt chỗ của bạn đã bị hủy.`;
+  //   }
+
+  //   if (extraNote) {
+  //     intro += `\n\n${extraNote}`;
+  //   }
+
+  //   // ===== PAYMENT SECTION (HTML & TEXT) =====
+  //   let paymentHtml = '';
+  //   let paymentText = '';
+
+  //   if (
+  //     (status === 'AWAITING_PAYMENT' ||
+  //       status === 'PAID' ||
+  //       status === 'CONFIRMED') &&
+  //     cfg
+  //   ) {
+  //     if (depositPercent > 0) {
+  //       paymentHtml = `
+  //       <h3>Thông tin thanh toán</h3>
+  //       <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
+  //       <p>Tiền cần thanh toán trước: <strong>${this.formatMoney({
+  //         currency,
+  //         amount: depositAmount,
+  //       })}</strong> (${depositPercent}%)</p>
+  //       <p>Phần còn lại dự kiến: <strong>${this.formatMoney({
+  //         currency,
+  //         amount: remainAmount,
+  //       })}</strong> (thanh toán tại quán nếu có phát sinh).</p>
+  //       <p>Mã thanh toán/đặt chỗ của bạn: <strong>${paymentCode}</strong></p>
+  //       ${paymentMethodsHtml}
+  //     `;
+
+  //       paymentText = [
+  //         `Tổng tiền dự kiến: ${totalStr}`,
+  //         `Thanh toán trước: ${this.formatMoney({
+  //           currency,
+  //           amount: depositAmount,
+  //         })} (${depositPercent}%)`,
+  //         `Phần còn lại dự kiến: ${this.formatMoney({
+  //           currency,
+  //           amount: remainAmount,
+  //         })}`,
+  //         `Mã thanh toán/đặt chỗ: ${paymentCode}`,
+  //         paymentMethodsText,
+  //       ]
+  //         .filter(Boolean)
+  //         .join('\n');
+  //     } else {
+  //       paymentHtml = `
+  //       <h3>Thanh toán</h3>
+  //       <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
+  //       <p>Bạn sẽ thanh toán toàn bộ tại nhà hàng.</p>
+  //       ${paymentMethodsHtml}
+  //     `;
+
+  //       paymentText = [
+  //         `Tổng tiền dự kiến: ${totalStr}`,
+  //         `Bạn sẽ thanh toán toàn bộ tại nhà hàng.`,
+  //         paymentMethodsText,
+  //       ]
+  //         .filter(Boolean)
+  //         .join('\n');
+  //     }
+  //   }
+
+  //   // ===== HTML BODY =====
+  //   const html = `
+  //   <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; font-size:14px; color:#222;">
+  //     <p>Xin chào ${user.displayName || user.email},</p>
+  //     <p>${intro}</p>
+
+  //     <h3>Thông tin đặt chỗ</h3>
+  //     <ul>
+  //       <li>Nhà hàng: <strong>${restoName}</strong></li>
+  //       <li>Thời gian đến dự kiến: <strong>${arrivalStr}</strong></li>
+  //       <li>Số khách: <strong>${preOrder.guestCount}</strong></li>
+  //       <li>Người liên hệ: <strong>${preOrder.contactName}</strong> (${preOrder.contactPhone})</li>
+  //       <li>Tổng tiền dự kiến: <strong>${totalStr}</strong></li>
+  //       <li>Tỉ lệ thanh toán trước: <strong>${depositStr}</strong></li>
+  //       <li>Mã thanh toán/đặt chỗ: <strong>${paymentCode}</strong></li>
+  //     </ul>
+
+  //     ${preOrder.note
+  //       ? `<p><strong>Ghi chú của bạn:</strong> ${preOrder.note}</p>`
+  //       : ''
+  //     }
+  //     ${preOrder.ownerNote
+  //       ? `<p><strong>Ghi chú từ nhà hàng:</strong> ${preOrder.ownerNote}</p>`
+  //       : ''
+  //     }
+
+  //     <h3>Chi tiết món</h3>
+  //     <table style="border-collapse:collapse; width:100%; max-width:640px;">
+  //       <thead>
+  //         <tr>
+  //           <th style="border-bottom:1px solid #ccc; text-align:left; padding:4px 8px;">Món</th>
+  //           <th style="border-bottom:1px solid #ccc; text-align:center; padding:4px 8px;">SL</th>
+  //           <th style="border-bottom:1px solid #ccc; text-align:right; padding:4px 8px;">Đơn giá</th>
+  //           <th style="border-bottom:1px solid #ccc; text-align:right; padding:4px 8px;">Thành tiền</th>
+  //         </tr>
+  //       </thead>
+  //       <tbody>
+  //         ${itemsRowsHtml}
+  //       </tbody>
+  //     </table>
+
+  //     ${paymentHtml || ''}
+
+  //     <p style="margin-top:16px;">Cảm ơn bạn đã đặt chỗ tại <strong>${restoName}</strong>.</p>
+  //   </div>
+  // `;
+
+  //   // ===== TEXT BODY =====
+  //   const textLines: string[] = [];
+
+  //   textLines.push(
+  //     `Xin chào ${user.displayName || user.email},`,
+  //     ``,
+  //     intro,
+  //     ``,
+  //     `Nhà hàng: ${restoName}`,
+  //     `Thời gian đến dự kiến: ${arrivalStr}`,
+  //     `Số khách: ${preOrder.guestCount}`,
+  //     `Người liên hệ: ${preOrder.contactName} (${preOrder.contactPhone})`,
+  //     `Tổng tiền dự kiến: ${totalStr}`,
+  //     `Tỉ lệ thanh toán trước: ${depositStr}`,
+  //     `Mã thanh toán/đặt chỗ: ${paymentCode}`,
+  //     ``,
+  //   );
+
+  //   if (preOrder.note) {
+  //     textLines.push(`Ghi chú của bạn: ${preOrder.note}`, ``);
+  //   }
+  //   if (preOrder.ownerNote) {
+  //     textLines.push(`Ghi chú từ nhà hàng: ${preOrder.ownerNote}`, ``);
+  //   }
+
+  //   if (itemsRowsText) {
+  //     textLines.push(`Chi tiết món:`, itemsRowsText, ``);
+  //   }
+
+  //   if (paymentText) {
+  //     textLines.push(`Thông tin thanh toán:`, paymentText, ``);
+  //   }
+
+  //   textLines.push(`Cảm ơn bạn đã đặt chỗ tại ${restoName}.`);
+
+  //   const text = textLines.join('\n');
+
+  //   return { subject, html, text };
+  // }
   private buildPreOrderEmailContent(
     preOrder: PreOrderDocument,
     user: UserDocument,
@@ -1071,18 +1490,20 @@ export class PreOrderService {
 
     const statusLabel = statusLabelMap[status] ?? status;
 
+    const portalUrl = 'https://www.food-map.online/me/pre-orders';
+
     // ===== ITEMS TABLE =====
     const itemsRowsHtml = (preOrder.items ?? [])
       .map((it) => {
         const lineTotalStr = this.formatMoney(it.lineTotal);
         const unitStr = this.formatMoney(it.unitPrice);
         return `
-          <tr>
-            <td style="padding:4px 8px;">${it.menuItemName ?? ''}</td>
-            <td style="padding:4px 8px; text-align:center;">${it.quantity}</td>
-            <td style="padding:4px 8px; text-align:right;">${unitStr}</td>
-            <td style="padding:4px 8px; text-align:right;">${lineTotalStr}</td>
-          </tr>`;
+        <tr>
+          <td style="padding:4px 8px;">${it.menuItemName ?? ''}</td>
+          <td style="padding:4px 8px; text-align:center;">${it.quantity}</td>
+          <td style="padding:4px 8px; text-align:right;">${unitStr}</td>
+          <td style="padding:4px 8px; text-align:right;">${lineTotalStr}</td>
+        </tr>`;
       })
       .join('');
 
@@ -1095,183 +1516,6 @@ export class PreOrderService {
       })
       .join('\n');
 
-    // ===== PAYMENT METHODS (BANK / WALLET) – MAP QR -> PUBLIC URL + IMG =====
-    let paymentMethodsHtml = '';
-    let paymentMethodsText = '';
-
-    // map paymentConfig sang object mới với imageUrl đã là public URL
-    const rawCfg: any = restaurant?.paymentConfig ?? null;
-    const cfg =
-      rawCfg && typeof rawCfg === 'object'
-        ? {
-          ...rawCfg,
-          bankTransfers: (rawCfg.bankTransfers ?? []).map((b: any) => {
-            const qrUrl = this.uploadService.toPublicUrl(b?.qr?.imageUrl);
-            return {
-              ...b,
-              qr: b.qr
-                ? {
-                  ...b.qr,
-                  imageUrl: qrUrl || undefined,
-                }
-                : undefined,
-            };
-          }),
-          eWallets: (rawCfg.eWallets ?? []).map((w: any) => {
-            const qrUrl = this.uploadService.toPublicUrl(w?.qr?.imageUrl);
-            return {
-              ...w,
-              qr: w.qr
-                ? {
-                  ...w.qr,
-                  imageUrl: qrUrl || undefined,
-                }
-                : undefined,
-            };
-          }),
-        }
-        : null;
-
-    if (cfg) {
-      const bankLinesHtml =
-        cfg.allowBankTransfer && cfg.bankTransfers && cfg.bankTransfers.length
-          ? cfg.bankTransfers
-            .map((b: any) => {
-              const qrUrl: string | undefined = b.qr?.imageUrl;
-              const qrPart = qrUrl
-                ? `
-                  <div style="margin-top:4px;">
-                    <div>QR:</div>
-                    <a href="${qrUrl}" target="_blank" rel="noopener noreferrer">${qrUrl}</a>
-                    <div style="margin-top:4px;">
-                      <img src="${qrUrl}"
-                           alt="QR chuyển khoản"
-                           style="max-width:220px; border-radius:8px; border:1px solid #eee;" />
-                    </div>
-                  </div>
-                `
-                : '';
-              const desc = b.qr?.description
-                ? `<div>${b.qr.description}</div>`
-                : '';
-              return `
-                  <li style="margin-bottom:8px;">
-                    <div><strong>${b.bankName ?? ''}</strong> - ${b.accountName ?? ''
-                }</div>
-                    <div>Số tài khoản: <strong>${b.accountNumber ?? ''}</strong></div>
-                    ${b.branch ? `<div>Chi nhánh: ${b.branch}</div>` : ''}
-                    ${qrPart}
-                    ${desc}
-                  </li>
-                `;
-            })
-            .join('')
-          : '';
-
-      const bankLinesText =
-        cfg.allowBankTransfer && cfg.bankTransfers && cfg.bankTransfers.length
-          ? cfg.bankTransfers
-            .map((b: any) => {
-              const qrUrl: string | undefined = b.qr?.imageUrl
-                ? this.uploadService.toPublicUrl(b.qr.imageUrl)
-                : undefined;
-              const lines = [
-                `${b.bankName ?? ''} - ${b.accountName ?? ''}`,
-                `Số TK: ${b.accountNumber ?? ''}`,
-                b.branch ? `Chi nhánh: ${b.branch}` : '',
-                qrUrl ? `QR: ${qrUrl}` : '',
-                b.qr?.description ?? '',
-              ].filter(Boolean);
-              return lines.join(' | ');
-            })
-            .join('\n  ')
-          : '';
-
-      const walletLinesHtml =
-        cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
-          ? cfg.eWallets
-            .map((w: any) => {
-              const qrUrl: string | undefined = w.qr?.imageUrl;
-              const qrPart = qrUrl
-                ? `
-                  <div style="margin-top:4px;">
-                    <div>QR:</div>
-                    <a href="${qrUrl}" target="_blank" rel="noopener noreferrer">${qrUrl}</a>
-                    <div style="margin-top:4px;">
-                      <img src="${qrUrl}"
-                           alt="QR ví điện tử"
-                           style="max-width:220px; border-radius:8px; border:1px solid #eee;" />
-                    </div>
-                  </div>
-                `
-                : '';
-              const desc = w.qr?.description
-                ? `<div>${w.qr.description}</div>`
-                : '';
-              return `
-                  <li style="margin-bottom:8px;">
-                    <div><strong>${w.provider ?? ''}</strong> - ${w.displayName ?? ''
-                }</div>
-                    ${w.phoneNumber
-                  ? `<div>SĐT: ${w.phoneNumber}</div>`
-                  : ''
-                }
-                    ${w.accountId ? `<div>ID: ${w.accountId}</div>` : ''}
-                    ${qrPart}
-                    ${desc}
-                  </li>
-                `;
-            })
-            .join('')
-          : '';
-
-      const walletLinesText =
-        cfg.allowEWallet && cfg.eWallets && cfg.eWallets.length
-          ? cfg.eWallets
-            .map((w: any) => {
-              const qrUrl: string | undefined = w.qr?.imageUrl
-                ? this.uploadService.toPublicUrl(w.qr.imageUrl)
-                : undefined;
-              const lines = [
-                `${w.provider ?? ''} - ${w.displayName ?? ''}`,
-                w.phoneNumber ? `SĐT: ${w.phoneNumber}` : '',
-                w.accountId ? `ID: ${w.accountId}` : '',
-                qrUrl ? `QR: ${qrUrl}` : '',
-                w.qr?.description ?? '',
-              ].filter(Boolean);
-              return lines.join(' | ');
-            })
-            .join('\n  ')
-          : '';
-
-      const cashHtml = cfg.allowCash
-        ? '<p>✓ Chấp nhận thanh toán tiền mặt tại nhà hàng.</p>'
-        : '';
-      const cashText = cfg.allowCash ? '- Thanh toán tiền mặt tại quán' : '';
-
-      paymentMethodsHtml = `
-      ${cashHtml}
-      ${bankLinesHtml
-          ? `<p><strong>Chuyển khoản ngân hàng:</strong></p><ul>${bankLinesHtml}</ul>`
-          : ''
-        }
-      ${walletLinesHtml
-          ? `<p><strong>Ví điện tử:</strong></p><ul>${walletLinesHtml}</ul>`
-          : ''
-        }
-      ${cfg.generalNote ? `<p><em>${cfg.generalNote}</em></p>` : ''}
-    `;
-
-      paymentMethodsText = [
-        cashText,
-        bankLinesText ? `- Chuyển khoản ngân hàng:\n  ${bankLinesText}` : '',
-        walletLinesText ? `- Ví điện tử:\n  ${walletLinesText}` : '',
-        cfg.generalNote ? `Ghi chú: ${cfg.generalNote}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n');
-    }
-
     // ===== SUBJECT & INTRO =====
     let subject = `[${restoName}] Đơn đặt chỗ của bạn ${statusLabel}`;
     let intro = `Đơn đặt chỗ của bạn tại ${restoName} hiện đang ở trạng thái: ${statusLabel}.`;
@@ -1280,41 +1524,42 @@ export class PreOrderService {
       subject = `[${restoName}] Vui lòng thanh toán trước ${depositStr} để giữ chỗ`;
       intro = `Nhà hàng yêu cầu thanh toán trước ${depositStr} (tương đương ${this.formatMoney(
         { currency, amount: depositAmount },
-      )}) để giữ chỗ. Vui lòng thanh toán và ghi MÃ THANH TOÁN: ${paymentCode} trong nội dung.`;
+      )}) để giữ chỗ. Vui lòng truy cập ${portalUrl} để xem hướng dẫn thanh toán và cập nhật trạng thái đơn.`;
     } else if (status === 'PAID') {
       subject = `[${restoName}] Đã nhận thanh toán đặt chỗ của bạn`;
-      intro = `Nhà hàng đã nhận được khoản thanh toán của bạn (mã thanh toán: ${paymentCode}). Đơn đặt chỗ đang chờ xác nhận cuối cùng.`;
+      intro = `Nhà hàng đã nhận được khoản thanh toán của bạn (mã thanh toán: ${paymentCode}). Đơn đặt chỗ đang chờ xác nhận cuối cùng. Bạn có thể kiểm tra lại trạng thái tại ${portalUrl}.`;
     } else if (status === 'CONFIRMED') {
       subject = `[${restoName}] Đơn đặt chỗ đã được xác nhận`;
       intro =
         depositPercent > 0
-          ? `Đơn đặt chỗ của bạn đã được xác nhận. Nhà hàng đã ghi nhận khoản thanh toán trước ${depositStr}. Mã thanh toán/đặt chỗ của bạn là: ${paymentCode}.`
-          : `Đơn đặt chỗ của bạn đã được xác nhận. Bạn sẽ thanh toán trực tiếp tại nhà hàng. Mã đặt chỗ của bạn là: ${paymentCode}.`;
+          ? `Đơn đặt chỗ của bạn đã được xác nhận. Nhà hàng đã ghi nhận khoản thanh toán trước ${depositStr}. Mã thanh toán/đặt chỗ của bạn là: ${paymentCode}. Bạn có thể xem lại chi tiết và trạng thái đơn tại ${portalUrl}.`
+          : `Đơn đặt chỗ của bạn đã được xác nhận. Bạn sẽ thanh toán trực tiếp tại nhà hàng. Mã đặt chỗ của bạn là: ${paymentCode}. Bạn có thể xem lại chi tiết đơn tại ${portalUrl}.`;
     } else if (status === 'REJECTED') {
       subject = `[${restoName}] Đơn đặt chỗ bị từ chối`;
-      intro = `Rất tiếc, đơn đặt chỗ của bạn đã bị nhà hàng từ chối.`;
+      intro = `Rất tiếc, đơn đặt chỗ của bạn đã bị nhà hàng từ chối. Bạn có thể kiểm tra thông tin chi tiết tại ${portalUrl}.`;
     } else if (status === 'CANCELLED') {
       subject = `[${restoName}] Đơn đặt chỗ đã bị hủy`;
-      intro = `Đơn đặt chỗ của bạn đã bị hủy.`;
+      intro = `Đơn đặt chỗ của bạn đã bị hủy. Bạn có thể kiểm tra thông tin chi tiết tại ${portalUrl}.`;
     }
 
     if (extraNote) {
       intro += `\n\n${extraNote}`;
     }
 
-    // ===== PAYMENT SECTION (HTML & TEXT) =====
+    // ===== PAYMENT SECTION (HTML & TEXT) – CHỈ HƯỚNG VÀO /me/pre-orders =====
     let paymentHtml = '';
     let paymentText = '';
 
-    if (
-      (status === 'AWAITING_PAYMENT' ||
-        status === 'PAID' ||
-        status === 'CONFIRMED') &&
-      cfg
-    ) {
+    const shouldShowPaymentSection =
+      status === 'AWAITING_PAYMENT' ||
+      status === 'PAID' ||
+      status === 'CONFIRMED';
+
+    if (shouldShowPaymentSection) {
       if (depositPercent > 0) {
+        // có cọc
         paymentHtml = `
-        <h3>Thông tin thanh toán</h3>
+        <h3>Thông tin thanh toán & theo dõi</h3>
         <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
         <p>Tiền cần thanh toán trước: <strong>${this.formatMoney({
           currency,
@@ -1325,7 +1570,11 @@ export class PreOrderService {
           amount: remainAmount,
         })}</strong> (thanh toán tại quán nếu có phát sinh).</p>
         <p>Mã thanh toán/đặt chỗ của bạn: <strong>${paymentCode}</strong></p>
-        ${paymentMethodsHtml}
+        <p style="margin-top:8px;">
+          Để xem hướng dẫn thanh toán chi tiết và theo dõi trạng thái đơn,
+          vui lòng truy cập:
+          <a href="${portalUrl}" target="_blank" rel="noopener noreferrer">${portalUrl}</a>
+        </p>
       `;
 
         paymentText = [
@@ -1339,22 +1588,26 @@ export class PreOrderService {
             amount: remainAmount,
           })}`,
           `Mã thanh toán/đặt chỗ: ${paymentCode}`,
-          paymentMethodsText,
+          `Vui lòng truy cập ${portalUrl} để xem hướng dẫn thanh toán và trạng thái đơn.`,
         ]
           .filter(Boolean)
           .join('\n');
       } else {
+        // không cọc, thanh toán toàn bộ tại quán
         paymentHtml = `
-        <h3>Thanh toán</h3>
+        <h3>Thanh toán & theo dõi</h3>
         <p>Tổng tiền dự kiến: <strong>${totalStr}</strong></p>
         <p>Bạn sẽ thanh toán toàn bộ tại nhà hàng.</p>
-        ${paymentMethodsHtml}
+        <p style="margin-top:8px;">
+          Bạn có thể xem lại chi tiết đơn và trạng thái xử lý tại:
+          <a href="${portalUrl}" target="_blank" rel="noopener noreferrer">${portalUrl}</a>
+        </p>
       `;
 
         paymentText = [
           `Tổng tiền dự kiến: ${totalStr}`,
           `Bạn sẽ thanh toán toàn bộ tại nhà hàng.`,
-          paymentMethodsText,
+          `Bạn có thể xem chi tiết đơn và trạng thái tại ${portalUrl}.`,
         ]
           .filter(Boolean)
           .join('\n');
@@ -1438,7 +1691,13 @@ export class PreOrderService {
     }
 
     if (paymentText) {
-      textLines.push(`Thông tin thanh toán:`, paymentText, ``);
+      textLines.push(`Thông tin thanh toán & theo dõi:`, paymentText, ``);
+    } else {
+      // fallback: vẫn nhắc portal nếu không có block payment riêng
+      textLines.push(
+        `Bạn có thể xem chi tiết đơn và trạng thái tại ${portalUrl}.`,
+        ``,
+      );
     }
 
     textLines.push(`Cảm ơn bạn đã đặt chỗ tại ${restoName}.`);

@@ -607,7 +607,7 @@ export class PreOrderService {
       opts?.extraNote,
     );
 
-    await this.mailer.sendMail({
+    this.mailer.sendMail({
       to: toEmail,
       subject,
       html,

@@ -36,7 +36,7 @@ export class ReviewService {
     private readonly restaurantModel: Model<Restaurant>,
     private readonly uploadService: UploadService,
     @InjectModel(User.name) private userModel: Model<User>
-  ) {}
+  ) { }
 
   // ===== RATING AGGREGATION =====
   private async updateRestaurantRating(restaurantId: string) {
@@ -288,7 +288,7 @@ export class ReviewService {
     return `${base}/${normalized}`;
   }
 
-async getReviewsByRestaurantWithUser(restaurantId: string) {
+  async getReviewsByRestaurantWithUser(restaurantId: string) {
     const restObj = new Types.ObjectId(restaurantId);
 
     // 1. Lấy tất cả review của quán, mới nhất trước
@@ -305,15 +305,17 @@ async getReviewsByRestaurantWithUser(restaurantId: string) {
       };
     }
 
-    // 2. Lấy danh sách userId duy nhất
+    // 2. Lấy danh sách userId duy nhất (convert về string cho chắc)
     const userIdSet = new Set<string>();
-    for (const r of reviews) {
-      if (r.userId) userIdSet.add(r.userId);
+    for (const r of reviews as any[]) {
+      if (r.userId) {
+        userIdSet.add(String(r.userId));
+      }
     }
 
     const userIds = Array.from(userIdSet);
 
-    // 3. Convert sang ObjectId (nếu hợp lệ) để query users
+    // 3. Convert sang ObjectId hợp lệ để query users
     const validUserObjectIds = userIds
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
@@ -333,38 +335,39 @@ async getReviewsByRestaurantWithUser(restaurantId: string) {
       userMap.set(u._id.toString(), u);
     }
 
-    // 4. Map lại kết quả kèm user basic info + prefix ảnh
+    // 4. Map kết quả: review + user + prefix ảnh (review + avatar)
     const items = reviews.map((r: any) => {
-      const u = userMap.get(r.userId);
+      const userIdStr = r.userId ? String(r.userId) : undefined;
+      const u = userIdStr ? userMap.get(userIdStr) : undefined;
 
-      // prefix list ảnh review
+      // prefix list ảnh review -> public URL
       const images: string[] = Array.isArray(r.images)
         ? r.images
-            .map((p: string) => this.resolveImageUrl(p))
-            .filter((x): x is string => !!x)
+          .map((p: string) => this.uploadService.toPublicUrl(p))
+          .filter((x) => !!x)
         : [];
 
-      // prefix avatar nếu cần
+      // prefix avatar -> public URL
       const avatarUrl = u?.avatarUrl
-        ? this.resolveImageUrl(u.avatarUrl)
+        ? this.uploadService.toPublicUrl(u.avatarUrl)
         : null;
 
       return {
-        _id: r._id,
-        restaurantId: r.restaurantId,
+        id: r._id.toString(),
+        restaurantId: r.restaurantId?.toString?.() ?? null,
         content: r.content,
-        images, // <-- giờ là full URL
+        images, // full URL
         rating: r.rating ?? 0,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
 
         user: u
           ? {
-              id: u._id.toString(),
-              displayName: u.displayName,
-              avatarUrl, // luôn là full URL hoặc null
-              email: u.email,
-            }
+            id: u._id.toString(),
+            displayName: u.displayName,
+            avatarUrl, // full URL hoặc null
+            email: u.email,
+          }
           : null,
       };
     });
